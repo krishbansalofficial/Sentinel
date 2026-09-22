@@ -6,14 +6,22 @@ phase tracker, and backend-to-frontend handoff record required by that plan.
 Update it at every phase boundary; do not mark a phase done without recorded
 test evidence.
 
-Branch: `feature/multi-agent-coordination` (created off `master`; nothing here
-is merged to `master` and nothing is pushed).
+Branch: `feature/multi-agent-coordination-phases` (created off `master`,
+pushed to `origin` at the request of the user; never pushed to `master`).
+Phase 0-1 landed as 10 commits `ef60364..db6aa45`. The older local branch
+`feature/multi-agent-coordination` is superseded by this one.
+
+Session rules (user instructions): whenever a session is stopped or paused,
+update this file first, then check with the user before resuming
+implementation. When the session nears its usage limit (~95%), update all
+docs, then commit and push to this branch (never `master`).
 
 ## How to resume this work
 
 1. Read this file's "Current state" and "Next concrete action" sections first.
 2. Read `docs/MULTI_AGENT_IMPLEMENTATION_PLAN.md` section 14 for the full phase
-   order — only Phase 0 and Phase 1 are addressed so far.
+   order. Phases 0-1 are done; Phase 2 is written but untested; Phases 3-5
+   have schema only.
 3. Run the focused test commands listed under "Test evidence" to confirm the
    recorded state before adding new work; do not assume it still holds.
 4. Continue at the next incomplete phase. Do not restart completed phases.
@@ -22,16 +30,26 @@ is merged to `master` and nothing is pushed).
 
 - Phase 0 (contracts and baseline): **done**.
 - Phase 1 (durable tasks and dependency graph): **backend + CLI done, tests
-  passing**. No frontend slice yet (see "Frontend status" below — this is a
-  known, explicitly tracked gap, not an oversight).
-- Phases 2-7: **not started**.
+  passing, committed and pushed**. No frontend slice yet (see "Frontend
+  status" below — this is a known, explicitly tracked gap, not an oversight).
+- Phase 2 (isolated workspaces and immutable results): **code and tests
+  written, tests NOT yet run**. `backend/app/coordination/workspaces.py` and
+  `backend/tests/coordination/test_workspaces.py` exist and are committed. The
+  test run was stopped by the user before it executed, so there is no pass/fail
+  evidence for Phase 2 yet. Do not treat Phase 2 as done.
+- Phases 3-5 (scheduler/dispatch, recovery/fencing, integration): **schema
+  only** (migration 12, applied and green in the existing tests). No service
+  code yet. See "Phases 2-5 — work in progress" below.
+- Phases 6-7: **not started**.
 
 ## Next concrete action
 
-Start Phase 2 (isolated workspaces and immutable results) per plan section 14,
-or, if frontend parity is prioritized first, build the "Tasks and graph"
-frontend slice (plan section 17 feature integration map) against the Phase 1
-API before moving on. Both are legitimate next steps; neither has been started.
+Wait for the user's go-ahead (session rule above). Then:
+
+1. Run `python -m pytest backend/tests/coordination/test_workspaces.py -q -rA`
+   and fix any failures. This suite has never been executed.
+2. Record the actual result under "Phase 2 — test evidence" below, then
+   continue at continuation step 3 (Phase 3 scheduler).
 
 ## Phase 0 — decision log
 
@@ -300,3 +318,123 @@ it — that is the deferred frontend slice).
   grow.
 - No per-actor policy scope on task routes yet (see handoff notes above).
 - No frontend slice yet (see "Frontend status" above).
+
+## Phases 2-5 — work in progress
+
+### Schema (migration 12, `coord_execution`)
+
+New `coord_tasks` columns: `executable`, `args_json`, `write_paths_json`,
+`verification_json`, `resources_json`, `current_attempt_id`, `attempt_count`,
+`next_eligible_at`, `pinned_base_sha`, `accepted_result_sha`,
+`resolves_integration_id`. New tables: `coord_attempts` (partial unique index
+`WHERE live = 1` enforces one live attempt per task in the database itself),
+`coord_workspaces`, `coord_resources`, `coord_resource_leases`,
+`coord_dispatch_intents` (records `pid` + process creation time, for identity
+that is safe against PID reuse), `coord_scheduler_owner` (singleton + epoch),
+`coord_change_settings` (dispatch pause, integration ref), and
+`coord_integrations`. The Phase 1 migration test now asserts
+`LATEST_SCHEMA_VERSION`. Evidence: coordination + migration + route tests →
+32 passed, 0 failed with migration 12 applied.
+
+### Code facts that shaped the design
+
+- `AgentLauncher.launch()` blocks until exit and mints `run_id` internally.
+  Its only early signal is the `on_update` observer, whose failures are
+  ignored. Decision: add an additive `on_started` keyword so the dispatcher
+  can durably record `run_id`/pid before the run finishes.
+- Attempt runs flow through `on_update` → `EvidenceStore.save_agent_run`, so
+  they appear in the existing AgentRun list for the Change automatically.
+- The hardened Git runner `GitRepositoryInspector._capture_git` is reused for
+  worktree, commit, merge and `update-ref` operations. Hooks are neutralized
+  with `core.hooksPath` pointing at an empty managed directory.
+- Dispatch rechecks `policy.evaluate(assigned_actor, change, "agent.launch")`
+  immediately before launch. A missing or failed authority check → task
+  `BLOCKED`, never launched.
+- CORS `allow_methods` lacks `PATCH`. It must be added for the browser to use
+  `PATCH /tasks/{id}` (frontend slice).
+- `app = create_app()` runs at import, so the dispatcher starts in the
+  FastAPI `lifespan`, not in `create_app`.
+
+### Design (plan sections 6-10, as applied to this code)
+
+1. Workspaces: repository identity = canonical `--git-common-dir`. Worktrees
+   go under `<db dir>/coord-workspaces/<id>` on branch
+   `sentinel/attempt/<attempt id>`, pinned to a base SHA, and the user
+   checkout is never touched. Capture after confirmed exit commits an
+   immutable result and records changed/renamed/binary/untracked files, scope
+   violations, and conflict markers. Cleanup refuses foreign paths and live
+   attempts.
+2. Integration ref per Change: `refs/heads/sentinel/integration/<change id>`,
+   initialized to committed HEAD. Attempt bases pin to it at dispatch.
+3. Scheduler: a deterministic `tick()` with an injected clock, plus a bounded
+   executor. Claims happen in one transaction: all-or-none resource
+   reservation, attempt + dispatch intent, task `ACTIVE`, and the journal
+   event. The launch happens after commit.
+4. Dispatch intent goes `PENDING` → `LAUNCHING` (durable, before launch) →
+   `LAUNCHED` (`on_started`). Finalization validates generation/epoch/liveness
+   and rejects stale attempts with `ATTEMPT_STALE`.
+5. Recovery: an OS lock file plus a durable epoch. On restart, `PENDING` →
+   safe requeue. `LAUNCHING` with no pid → quarantine + `BLOCKED`. A pid is
+   matched on `(pid, creation time)`. Never blind relaunch.
+6. Cancellation: `CANCEL_REQUESTED` (202) → stop → `CANCELLED` only after exit
+   is confirmed.
+7. Integration: a single writer. Merge in a fresh worktree; conflict →
+   `CONFLICT`/`BLOCKED` with both sides preserved. Checks run on the exact
+   candidate, and the candidate must be unchanged afterwards. `ADVANCING` is
+   persisted before a CAS `update-ref`, and restart reconciles ref state.
+   Resolution tasks start from target + conflicting merge.
+
+### Phase 2 — what was built (committed, untested)
+
+- `backend/app/coordination/workspaces.py` (`WorkspaceManager`). All Git calls
+  go through `GitRepositoryInspector._capture_git`, with hooks neutralized via
+  `core.hooksPath=<managed root>/.empty-hooks` and `commit --no-verify`.
+  - `repository_identity()`: canonical `--git-common-dir` (resolved and
+    casefolded), identical across worktrees of one repository.
+  - `resolve_commit()`, `read_ref()`, `ensure_ref()` (creation is a CAS
+    against the all-zero SHA), and `compare_and_swap_ref()` (`update-ref new
+    old`). These write only `refs/heads/sentinel/...`
+    (`WORKSPACE_REF_NOT_MANAGED` otherwise).
+  - `create()`: `git worktree add -b sentinel/attempt/<id> <managed>/<id>
+    <base sha>` (or `--detach` for integration candidates). The user
+    checkout is never touched.
+  - `capture()`: after confirmed exit, runs `add -A`, then restores
+    sensitive-pattern files (`.env`, `*.key`, `*.pem`, ...) to HEAD in the
+    index via `reset HEAD --`, so a tracked secret is never committed as a
+    deletion or as agent content. Then commits (merge-aware) and reports the
+    files (added/modified/deleted/renamed with old path, binary flag),
+    `scope_violations` against declared `write_paths` (reusing
+    `assurance.deviations.matches_any`), `excluded_sensitive`,
+    `conflict_markers`, and an explicit `no_change`.
+  - `merge_into()` / `abort_merge()` / `head()` / `tracked_modifications()`:
+    primitives for Phase 5 integration and resolution tasks.
+  - `remove()`: refuses live attempts (`WORKSPACE_ACTIVE`) and any path that
+    resolves (following junctions, casefolded) outside the managed root
+    (`WORKSPACE_NOT_MANAGED`).
+- `backend/tests/coordination/test_workspaces.py` (11 tests, real temp repos,
+  repository and managed root paths contain spaces): two attempts editing the
+  same file while the user's dirty checkout/branch stays unchanged;
+  rename/binary/untracked/scope/sensitive capture; a tracked sensitive file
+  restored rather than deleted; explicit no-change; conflict markers; a merge
+  conflict detected with both sides preserved; a clean merge; ref CAS and the
+  managed-ref guard; identity shared across worktrees; cleanup refusal for
+  live/foreign/`..` paths; and (Windows only) an NTFS junction escape refused
+  plus a case-aliased workspace path still recognized.
+
+### Phase 2 — test evidence
+
+**None yet.** The first run
+(`python -m pytest backend/tests/coordination/test_workspaces.py -q -rA`) was
+stopped by the user before execution. Run it first when resuming.
+
+### Continuation steps
+
+1. ~~Migration 12~~ done.
+2. `workspaces.py` + real-repo tests: written and committed, **not yet run**.
+   Run, fix, and record evidence.
+3. Launcher `on_started`, `resources.py`, attempts, `scheduler.py`, lifespan
+   wiring, routes, CLI, fake-launcher tests → commit Phase 3.
+4. Reconciliation, cancellation, retry, quarantine, crash tests → commit
+   Phase 4.
+5. `integration.py`, CAS, resolution → commit Phase 5.
+6. Regenerate `openapi.json` + desktop types after route changes.
