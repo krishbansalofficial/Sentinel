@@ -46,6 +46,7 @@ from backend.app.contracts.ports import (
 )
 from backend.app.core.change_service import ChangeService
 from backend.app.coordination.service import CoordinationService
+from backend.app.coordination.workspace_registry import WorkspaceRegistry
 from backend.app.core.errors import (
     grant_binding_invalid,
     idempotency_conflict,
@@ -721,3 +722,6 @@ class RuntimeServices:
     replay: ReplayService
     tools: ToolRegistryService
     coordination: CoordinationService
+    # Phase 2 managed worktrees. Reconciliation is deliberately not run at
+    # construction: it must run under scheduler ownership (Phase 3 lifespan).
+    workspaces: WorkspaceRegistry | None = None

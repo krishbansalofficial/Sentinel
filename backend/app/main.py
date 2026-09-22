@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncIterator
 from uuid import uuid4
 
@@ -37,6 +38,8 @@ from backend.app.core.router import build_router
 from backend.app.core.tool_registry_service import ToolRegistryService
 from backend.app.coordination.repository import TaskRepository
 from backend.app.coordination.service import CoordinationService
+from backend.app.coordination.workspace_registry import WorkspaceRegistry
+from backend.app.coordination.workspaces import WorkspaceManager
 from backend.app.core.runtime_repositories import (
     CredentialGrantRepository,
     OutcomeRepository,
@@ -327,6 +330,10 @@ def _build_runtime_services(
         replay=replay_service,
         tools=resolved_tools,
         coordination=coordination,
+        workspaces=WorkspaceRegistry(
+            database, WorkspaceManager(Path(database.path).parent / "coord-workspaces"),
+            journal=resolved_journal,
+        ),
     )
 
 

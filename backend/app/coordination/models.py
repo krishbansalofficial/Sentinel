@@ -13,7 +13,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
-from backend.app.contracts.models import TaskState
+from typing import Any
+
+from backend.app.contracts.models import TaskState, WorkspacePurpose, WorkspaceState
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,3 +39,27 @@ class StoredTask:
     failure_reason: str | None = None
     submitted_at: datetime | None = None
     depends_on_task_ids: tuple[UUID, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True, slots=True)
+class StoredWorkspace:
+    """One `coord_workspaces` row. `capture` is the immutable manifest written
+    when the result was committed (files, scope violations, exclusions)."""
+
+    id: str
+    change_id: UUID
+    purpose: WorkspacePurpose
+    repository_identity: str
+    repository_root: str
+    path: str
+    base_sha: str
+    state: WorkspaceState
+    created_at: datetime
+    updated_at: datetime
+    attempt_id: UUID | None = None
+    branch: str | None = None
+    result_sha: str | None = None
+    result_ref: str | None = None
+    capture: dict[str, Any] | None = None
+    detail: str | None = None
+    removed_at: datetime | None = None

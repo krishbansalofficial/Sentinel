@@ -80,3 +80,21 @@ def task_invalid_transition(task_id: str, current: str, action: str) -> AppError
         status_code=409,
         details={"task_id": task_id, "current_state": current, "action": action},
     )
+
+
+def workspace_not_found(workspace_id: str) -> AppError:
+    return AppError(
+        "WORKSPACE_NOT_FOUND",
+        "The requested workspace does not exist.",
+        status_code=404,
+        details={"workspace_id": workspace_id},
+    )
+
+
+def workspace_invalid_state(workspace_id: str, current: str, action: str) -> AppError:
+    return AppError(
+        "WORKSPACE_INVALID_STATE",
+        f"The workspace cannot be {action} from its current state.",
+        status_code=409,
+        details={"workspace_id": workspace_id, "current_state": current, "action": action},
+    )

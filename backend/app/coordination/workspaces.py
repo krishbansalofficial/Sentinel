@@ -43,6 +43,10 @@ SENSITIVE_PATTERNS = [
 ]
 CONFLICT_MARKER = re.compile(rb"^(<{7} |>{7} |={7}$)", re.MULTILINE)
 MAX_MARKER_SCAN_BYTES = 2 * 1_048_576
+# Upper bound on files in one captured result. A larger change set is refused
+# (index restored, worktree untouched) rather than committed or truncated.
+MAX_CAPTURE_FILES = 2000
+RESULT_REF_PREFIX = "refs/heads/sentinel/results/"
 
 
 def workspace_error(code: str, message: str, **details: object) -> AppError:
@@ -76,6 +80,24 @@ class CaptureResult:
     scope_violations: list[str] = field(default_factory=list)
     excluded_sensitive: list[str] = field(default_factory=list)
     conflict_markers: list[str] = field(default_factory=list)
+    sensitive_committed: list[str] = field(default_factory=list)
+
+    def to_manifest(self) -> dict[str, object]:
+        """JSON-safe manifest stored with the workspace record."""
+
+        return {
+            "base_sha": self.base_sha,
+            "result_sha": self.result_sha,
+            "no_change": self.no_change,
+            "files": [
+                {"path": f.path, "status": f.status, "old_path": f.old_path, "binary": f.binary}
+                for f in self.files
+            ],
+            "scope_violations": list(self.scope_violations),
+            "excluded_sensitive": list(self.excluded_sensitive),
+            "conflict_markers": list(self.conflict_markers),
+            "sensitive_committed": list(self.sensitive_committed),
+        }
 
 
 class WorkspaceManager:
@@ -128,6 +150,20 @@ class WorkspaceManager:
         self._git(root, ["update-ref", ref, sha, "0" * 40])
         return sha
 
+    def pin_result(self, root: str, workspace_id: str, sha: str) -> str:
+        """Keep `sha` reachable under a managed result ref, independent of the
+        attempt branch (which an agent can move) and of the worktree (which
+        cleanup removes). Pinning is create-once: an existing ref must
+        already name the same commit."""
+
+        ref = RESULT_REF_PREFIX + workspace_id
+        existing = self.ensure_ref(root, ref, sha)
+        if existing != sha:
+            raise workspace_error("WORKSPACE_RESULT_REF_CONFLICT",
+                                  "The workspace result is already pinned to a different commit.",
+                                  ref=ref, pinned_sha=existing, result_sha=sha)
+        return ref
+
     def compare_and_swap_ref(self, root: str, ref: str, new_sha: str, expected_old: str) -> bool:
         """Advance `ref` only if it still points at `expected_old`."""
 
@@ -169,6 +205,7 @@ class WorkspaceManager:
         resolution attempt can edit the markers; callers that only want to
         detect conflicts call `abort_merge` afterwards."""
 
+        self._require_worktree(path)
         try:
             self._git(str(path), [*self._identity_args(), "merge", "--no-ff", "--no-edit",
                                   "-m", message, "--end-of-options", source_sha])
@@ -195,16 +232,45 @@ class WorkspaceManager:
         output = self._git(str(path), ["diff", "--name-only", "-z", "HEAD", "--"])
         return [item for item in output.split("\0") if item]
 
+    def is_ancestor(self, root: str, ancestor: str, descendant: str) -> bool:
+        try:
+            self._git(root, ["merge-base", "--is-ancestor", ancestor, descendant])
+        except GitCommandError as exc:
+            if exc.details.get("exit_code") == 1:
+                return False
+            raise
+        return True
+
+    def registered_worktrees(self, repository_root: str) -> set[str]:
+        """Canonical paths of every worktree Git currently knows about."""
+
+        output = self._git(repository_root, ["worktree", "list", "--porcelain", "-z"])
+        return {
+            self._canonical(Path(item[len("worktree "):]))
+            for item in output.split("\0") if item.startswith("worktree ")
+        }
+
     def capture(self, path: Path, *, base_sha: str, write_paths: list[str],
-                message: str) -> CaptureResult:
+                message: str, max_files: int = MAX_CAPTURE_FILES) -> CaptureResult:
         """Commit the attempt's edits as an immutable result.
 
         Call only after the attempt's process exit is confirmed. Sensitive
         files are left out of the commit and reported. Declared write-path
         violations and leftover conflict markers are reported, not silently
         accepted; the caller decides whether the result is acceptable.
+
+        Refused outright, with nothing committed: a worktree whose Git link was
+        broken or redirected, a HEAD that no longer descends from the pinned
+        base (the agent reset or switched branches), and a change set larger
+        than `max_files`.
         """
 
+        self._require_worktree(path)
+        head = self.head(path)
+        if not self.is_ancestor(str(path), base_sha, head):
+            raise workspace_error("WORKSPACE_BASE_DIVERGED",
+                                  "The workspace HEAD no longer descends from its pinned base.",
+                                  base_sha=base_sha, head_sha=head)
         worktree = str(path)
         inspector = GitRepositoryInspector
         status = inspector._parse_status(self._git(worktree, [
@@ -217,14 +283,27 @@ class WorkspaceManager:
             # index, a tracked one keeps its committed content (never a deletion).
             self._git(worktree, ["reset", "-q", "HEAD", "--", *excluded])
         merging = self._merge_in_progress(path)
-        staged = self._git(worktree, ["diff", "--cached", "--name-only", "-z", "HEAD", "--"])
-        if not staged.strip("\0") and not merging:
-            head = self.head(path)
-            return CaptureResult(base_sha=base_sha, result_sha=head, no_change=True,
-                                 excluded_sensitive=excluded)
-        self._git(worktree, [*self._identity_args(), "commit", "--quiet", "--no-verify",
-                             "--allow-empty", "-m", message])
+        staged = {item for item in self._git(
+            worktree, ["diff", "--cached", "--name-only", "-z", "HEAD", "--"]).split("\0") if item}
+        # Commits the agent (or an interrupted earlier capture) already made
+        # count toward the bound too: the result is everything since base.
+        committed = {item for item in self._git(
+            worktree, ["diff", "--name-only", "-z", base_sha, head, "--"]).split("\0") if item}
+        file_count = len(staged | committed)
+        if file_count > max_files:
+            self._git(worktree, ["reset", "-q", "HEAD", "--", "."])
+            raise workspace_error("WORKSPACE_RESULT_TOO_LARGE",
+                                  "The attempt changed more files than one result may hold.",
+                                  file_count=file_count, limit=max_files)
+        if staged or merging:
+            self._git(worktree, [*self._identity_args(), "commit", "--quiet", "--no-verify",
+                                 "--allow-empty", "-m", message])
         result_sha = self.head(path)
+        # "No change" means the result is the base itself, not "nothing was
+        # staged": an agent that committed its own edits still has a result.
+        if result_sha == base_sha:
+            return CaptureResult(base_sha=base_sha, result_sha=result_sha, no_change=True,
+                                 excluded_sensitive=excluded)
         files = self._diff_files(worktree, base_sha, result_sha)
         violations = (
             [f.path for f in files if not matches_any(f.path, write_paths)]
@@ -234,9 +313,17 @@ class WorkspaceManager:
             f.path for f in files
             if f.status != "deleted" and not f.binary and self._has_markers(path / f.path)
         ]
+        # Exclusion only covers the working tree. A sensitive file that reached
+        # the result through the agent's own commits cannot be silently
+        # dropped without rewriting its history, so it is reported instead.
+        sensitive_committed = [
+            f.path for f in files
+            if f.status != "deleted" and matches_any(f.path, SENSITIVE_PATTERNS)
+        ]
         return CaptureResult(
             base_sha=base_sha, result_sha=result_sha, no_change=False, files=files,
             scope_violations=violations, excluded_sensitive=excluded, conflict_markers=markers,
+            sensitive_committed=sensitive_committed,
         )
 
     def remove(self, repository_root: str, path: str | Path, *, attempt_live: bool) -> None:
@@ -258,6 +345,11 @@ class WorkspaceManager:
                 shutil.rmtree(target)
             self._git(repository_root, ["worktree", "prune"])
 
+    def prune(self, repository_root: str) -> None:
+        """Drop Git's records of worktrees whose directories no longer exist."""
+
+        self._git(repository_root, ["worktree", "prune"])
+
     def contains(self, path: str | Path) -> bool:
         try:
             self._contained(path)
@@ -266,6 +358,21 @@ class WorkspaceManager:
         return True
 
     # -- internals ----------------------------------------------------------
+
+    def _require_worktree(self, path: Path) -> None:
+        """Refuse to run Git in a workspace whose `.git` link is missing or
+        points elsewhere: Git would otherwise discover an enclosing
+        repository and commit into it."""
+
+        try:
+            top = self._git(str(path), ["rev-parse", "--show-toplevel"]).strip()
+        except GitCommandError as exc:
+            raise workspace_error("WORKSPACE_CORRUPT",
+                                  "The workspace is no longer a Git worktree.") from exc
+        if self._canonical(Path(top)) != self._canonical(Path(path)):
+            raise workspace_error("WORKSPACE_CORRUPT",
+                                  "The workspace resolves to a different Git worktree.",
+                                  toplevel=top)
 
     def _contained(self, path: str | Path) -> Path:
         try:
@@ -353,6 +460,6 @@ class WorkspaceManager:
 
 
 __all__ = [
-    "CaptureResult", "CapturedFile", "RepositoryIdentity",
-    "SENSITIVE_PATTERNS", "WorkspaceManager",
+    "CaptureResult", "CapturedFile", "MAX_CAPTURE_FILES", "RESULT_REF_PREFIX",
+    "RepositoryIdentity", "SENSITIVE_PATTERNS", "WorkspaceManager",
 ]

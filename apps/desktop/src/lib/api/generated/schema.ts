@@ -2424,7 +2424,7 @@ export interface components {
          *     event types below; it is not a filesystem or tool-call trace.
          * @enum {string}
          */
-        JournalEventType: "change.created" | "change.contract_updated" | "change.transitioned" | "change.git_summary_refreshed" | "change.legacy_verification_run" | "change.deleted" | "delegation.issued" | "delegation.revoked" | "credential.grant.issued" | "credential.grant.revoked" | "credential.secret.resolved" | "git.checkpoint.captured" | "agent.launched" | "agent.attached" | "agent.stop_requested" | "agent.completed" | "agent.descendant.observed" | "agent.descendant.terminated" | "agent.process_tree.terminated" | "environment.passport.captured" | "dependency.report.captured" | "assurance.plan.created" | "assurance.check.completed" | "provider.pull_request.created" | "provider.pull_request.refreshed" | "provider.pull_request.closed" | "provider.ci_refreshed" | "outcome.recorded" | "recovery.plan.created" | "recovery.action.completed" | "recovery.plan.completed" | "passport.built" | "passport.export.signed" | "policy.decision.denied" | "tool.manifest.registered" | "tool.trust.decided" | "tool.trust.invalidated" | "agent.paused" | "agent.resumed" | "change.forked" | "task.created" | "task.edited" | "task.dependencies.replaced" | "task.submitted" | "task.cancelled";
+        JournalEventType: "change.created" | "change.contract_updated" | "change.transitioned" | "change.git_summary_refreshed" | "change.legacy_verification_run" | "change.deleted" | "delegation.issued" | "delegation.revoked" | "credential.grant.issued" | "credential.grant.revoked" | "credential.secret.resolved" | "git.checkpoint.captured" | "agent.launched" | "agent.attached" | "agent.stop_requested" | "agent.completed" | "agent.descendant.observed" | "agent.descendant.terminated" | "agent.process_tree.terminated" | "environment.passport.captured" | "dependency.report.captured" | "assurance.plan.created" | "assurance.check.completed" | "provider.pull_request.created" | "provider.pull_request.refreshed" | "provider.pull_request.closed" | "provider.ci_refreshed" | "outcome.recorded" | "recovery.plan.created" | "recovery.action.completed" | "recovery.plan.completed" | "passport.built" | "passport.export.signed" | "policy.decision.denied" | "tool.manifest.registered" | "tool.trust.decided" | "tool.trust.invalidated" | "agent.paused" | "agent.resumed" | "change.forked" | "task.created" | "task.edited" | "task.dependencies.replaced" | "task.submitted" | "task.cancelled" | "task.state_changed" | "task.cancel_requested" | "task.retried" | "task.recovered" | "attempt.claimed" | "attempt.workspace_ready" | "attempt.dispatched" | "attempt.run_associated" | "attempt.completed" | "attempt.failed" | "attempt.cancelled" | "attempt.lost" | "attempt.stale_rejected" | "resource.quarantined" | "resource.released" | "coordination.paused" | "coordination.resumed" | "integration.queued" | "integration.intent" | "integration.conflict" | "integration.checks_failed" | "integration.base_moved" | "integration.applied" | "integration.uncertain" | "integration.resolution_requested" | "workspace.creating" | "workspace.ready" | "workspace.captured" | "workspace.failed" | "workspace.removing" | "workspace.removed";
         /** Outcome */
         Outcome: {
             /**
@@ -2764,10 +2764,14 @@ export interface components {
         TaskCreateRequest: {
             /** Adapter */
             adapter: string;
+            /** Args */
+            args?: string[];
             /** Assigned Actor Id */
             assigned_actor_id?: string | null;
             /** Creator Actor Id */
             creator_actor_id?: string | null;
+            /** Executable */
+            executable?: string | null;
             /**
              * Execution Timeout Seconds
              * @default 900
@@ -2785,8 +2789,14 @@ export interface components {
              * @default 0
              */
             priority: number;
+            /** Resources */
+            resources?: components["schemas"]["TaskResourceRequest"][];
             /** Title */
             title: string;
+            /** Verification */
+            verification?: components["schemas"]["VerificationRequest"][];
+            /** Write Paths */
+            write_paths?: string[];
         };
         /** TaskDependenciesRequest */
         TaskDependenciesRequest: {
@@ -2799,8 +2809,12 @@ export interface components {
         TaskEditRequest: {
             /** Adapter */
             adapter?: string | null;
+            /** Args */
+            args?: string[] | null;
             /** Assigned Actor Id */
             assigned_actor_id?: string | null;
+            /** Executable */
+            executable?: string | null;
             /** Execution Timeout Seconds */
             execution_timeout_seconds?: number | null;
             /** Expected Revision */
@@ -2811,8 +2825,14 @@ export interface components {
             max_attempts?: number | null;
             /** Priority */
             priority?: number | null;
+            /** Resources */
+            resources?: components["schemas"]["TaskResourceRequest"][] | null;
             /** Title */
             title?: string | null;
+            /** Verification */
+            verification?: components["schemas"]["VerificationRequest"][] | null;
+            /** Write Paths */
+            write_paths?: string[] | null;
         };
         /** TaskListResponse */
         TaskListResponse: {
@@ -2822,6 +2842,21 @@ export interface components {
             items: components["schemas"]["TaskView"][];
             /** Total */
             total: number;
+        };
+        /**
+         * TaskResourceRequest
+         * @description An exclusive managed resource an attempt needs for its whole execution
+         *     stage, acquired all-or-none together with an execution slot. Keys are
+         *     canonical and exact (no wildcards); see plan section 7.
+         */
+        TaskResourceRequest: {
+            /** Key */
+            key: string;
+            /**
+             * Units
+             * @default 1
+             */
+            units: number;
         };
         /**
          * TaskState
@@ -2843,10 +2878,19 @@ export interface components {
         };
         /** TaskView */
         TaskView: {
+            /** Accepted Result Sha */
+            accepted_result_sha?: string | null;
             /** Adapter */
             adapter: string;
+            /** Args */
+            args?: string[];
             /** Assigned Actor Id */
             assigned_actor_id?: string | null;
+            /**
+             * Attempt Count
+             * @default 0
+             */
+            attempt_count: number;
             /**
              * Change Id
              * Format: uuid
@@ -2859,8 +2903,12 @@ export interface components {
             created_at: string;
             /** Creator Actor Id */
             creator_actor_id?: string | null;
+            /** Current Attempt Id */
+            current_attempt_id?: string | null;
             /** Depends On Task Ids */
             depends_on_task_ids?: string[];
+            /** Executable */
+            executable?: string | null;
             /** Execution Timeout Seconds */
             execution_timeout_seconds: number;
             /** Failure Reason */
@@ -2874,8 +2922,16 @@ export interface components {
             instructions: string;
             /** Max Attempts */
             max_attempts: number;
+            /** Next Eligible At */
+            next_eligible_at?: string | null;
+            /** Pinned Base Sha */
+            pinned_base_sha?: string | null;
             /** Priority */
             priority: number;
+            /** Resolves Integration Id */
+            resolves_integration_id?: string | null;
+            /** Resources */
+            resources?: components["schemas"]["TaskResourceRequest"][];
             /** Revision */
             revision: number;
             state: components["schemas"]["TaskState"];
@@ -2888,8 +2944,12 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Verification */
+            verification?: components["schemas"]["VerificationRequest"][];
             /** Waiting Reason */
             waiting_reason?: string | null;
+            /** Write Paths */
+            write_paths?: string[];
         };
         /** ToolDeclareRequest */
         ToolDeclareRequest: {

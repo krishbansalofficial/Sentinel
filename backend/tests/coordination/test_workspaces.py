@@ -238,3 +238,444 @@ def test_cleanup_refuses_junction_escaping_managed_root(
         assert manager.contains(Path(str(ws).upper())) is True
     finally:
         os.rmdir(junction)
+
+
+# -- capture correctness ------------------------------------------------------
+
+
+def _commit_in(path: Path, message: str) -> str:
+    git(path, "add", "-A")
+    git(path, "commit", "-q", "--no-verify", "-m", message)
+    return git(path, "rev-parse", "HEAD")
+
+
+def test_agent_committed_work_is_a_result_not_no_change(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    """Regression: an agent that commits its own edits leaves nothing staged;
+    that must still produce a result, not an empty `no_change` capture."""
+
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "self-commit", base, "sentinel/attempt/self-commit")
+    (path / "app.py").write_text("def value():\n    return 42\n", encoding="utf-8")
+    agent_head = _commit_in(path, "agent commit")
+
+    result = manager.capture(path, base_sha=base, write_paths=[], message="capture")
+
+    assert result.no_change is False
+    assert result.result_sha == agent_head  # nothing new to commit on top
+    assert [(f.path, f.status) for f in result.files] == [("app.py", "modified")]
+
+
+def test_agent_commits_plus_uncommitted_edits_form_one_result(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "mixed", base, "sentinel/attempt/mixed")
+    (path / "committed.txt").write_text("c\n", encoding="utf-8")
+    agent_head = _commit_in(path, "agent part")
+    (path / "uncommitted.txt").write_text("u\n", encoding="utf-8")
+
+    result = manager.capture(path, base_sha=base, write_paths=[], message="capture")
+
+    assert git(repo, "rev-parse", f"{result.result_sha}~1") == agent_head
+    assert sorted(f.path for f in result.files) == ["committed.txt", "uncommitted.txt"]
+
+
+def test_recapture_after_commit_returns_the_same_result(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    """A capture interrupted after its commit (or simply replayed) must not
+    mint a second commit or report the committed work as no change."""
+
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "replay", base, "sentinel/attempt/replay")
+    (path / "app.py").write_text("changed\n", encoding="utf-8")
+    first = manager.capture(path, base_sha=base, write_paths=[], message="one")
+    second = manager.capture(path, base_sha=base, write_paths=[], message="two")
+
+    assert second.result_sha == first.result_sha
+    assert second.no_change is False
+    assert [f.path for f in second.files] == ["app.py"]
+    assert git(repo, "rev-list", "--count", f"{base}..{first.result_sha}") == "1"
+
+
+def test_deleted_and_unicode_paths_are_captured(repo: Path, manager: WorkspaceManager) -> None:
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "unicode", base, "sentinel/attempt/unicode")
+    (path / "old_name.txt").unlink()
+    nested = path / "dïr with space"
+    nested.mkdir()
+    (nested / "fïle ñ.txt").write_text("hola\n", encoding="utf-8")
+
+    result = manager.capture(path, base_sha=base, write_paths=[], message="unicode")
+
+    by_path = {f.path: f.status for f in result.files}
+    assert by_path == {"old_name.txt": "deleted", "dïr with space/fïle ñ.txt": "added"}
+
+
+def test_sensitive_file_committed_by_agent_is_reported(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "leak", base, "sentinel/attempt/leak")
+    (path / ".env").write_text("TOKEN=abc\n", encoding="utf-8")
+    _commit_in(path, "agent committed a secret")
+
+    result = manager.capture(path, base_sha=base, write_paths=[], message="capture")
+
+    assert result.sensitive_committed == [".env"]
+    assert result.excluded_sensitive == []  # it never reached the working-tree filter
+
+
+def test_base_divergence_is_refused_without_committing(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    (repo / "second.txt").write_text("2\n", encoding="utf-8")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "second")
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "diverge", base, "sentinel/attempt/diverge")
+    git(path, "reset", "-q", "--hard", "HEAD~1")  # agent rewound past its base
+    (path / "app.py").write_text("edit\n", encoding="utf-8")
+    head_before = git(path, "rev-parse", "HEAD")
+
+    with pytest.raises(AppError) as error:
+        manager.capture(path, base_sha=base, write_paths=[], message="capture")
+
+    assert error.value.code == "WORKSPACE_BASE_DIVERGED"
+    assert error.value.details["base_sha"] == base
+    assert git(path, "rev-parse", "HEAD") == head_before
+    assert (path / "app.py").read_text(encoding="utf-8") == "edit\n"
+
+
+def test_oversized_result_is_refused_and_index_restored(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "big", base, "sentinel/attempt/big")
+    for index in range(5):
+        (path / f"gen_{index}.txt").write_text(f"{index}\n", encoding="utf-8")
+
+    with pytest.raises(AppError) as error:
+        manager.capture(path, base_sha=base, write_paths=[], message="big", max_files=3)
+
+    assert error.value.code == "WORKSPACE_RESULT_TOO_LARGE"
+    assert error.value.details == {"file_count": 5, "limit": 3}
+    assert git(path, "rev-parse", "HEAD") == base
+    assert git(path, "diff", "--cached", "--name-only") == ""
+    assert all((path / f"gen_{i}.txt").exists() for i in range(5))
+    # The same work is accepted once the bound allows it.
+    result = manager.capture(path, base_sha=base, write_paths=[], message="big", max_files=5)
+    assert len(result.files) == 5
+
+
+def test_oversized_bound_counts_agent_commits(repo: Path, manager: WorkspaceManager) -> None:
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "big-commit", base, "sentinel/attempt/big-commit")
+    for index in range(4):
+        (path / f"c_{index}.txt").write_text("x\n", encoding="utf-8")
+    _commit_in(path, "agent bulk commit")
+
+    with pytest.raises(AppError) as error:
+        manager.capture(path, base_sha=base, write_paths=[], message="c", max_files=3)
+    assert error.value.details["file_count"] == 4
+
+
+def test_broken_worktree_link_never_commits_into_an_enclosing_repo(
+    repo: Path, tmp_path: Path
+) -> None:
+    """If an agent deletes its worktree's `.git` file, Git would discover the
+    nearest enclosing repository. Capture must refuse instead of committing
+    the agent's files there."""
+
+    outer = tmp_path / "outer repo"
+    outer.mkdir()
+    git(outer, "init", "-q", "-b", "main")
+    (outer / "readme.txt").write_text("outer\n", encoding="utf-8")
+    git(outer, "add", "-A")
+    git(outer, "commit", "-q", "-m", "outer base")
+    outer_head = git(outer, "rev-parse", "HEAD")
+    manager = WorkspaceManager(outer / "managed")
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "broken", base, "sentinel/attempt/broken")
+    (path / ".git").unlink()
+    (path / "payload.txt").write_text("agent output\n", encoding="utf-8")
+
+    with pytest.raises(AppError) as error:
+        manager.capture(path, base_sha=base, write_paths=[], message="capture")
+    assert error.value.code == "WORKSPACE_CORRUPT"
+    with pytest.raises(AppError) as merge_error:
+        manager.merge_into(path, base, "merge")
+    assert merge_error.value.code == "WORKSPACE_CORRUPT"
+    assert git(outer, "rev-parse", "HEAD") == outer_head
+    assert git(outer, "diff", "--cached", "--name-only") == ""
+
+
+# -- Git configuration an attacker or user repo could carry ----------------------
+
+
+def test_repository_hooks_never_run(repo: Path, manager: WorkspaceManager, tmp_path: Path) -> None:
+    marker = tmp_path / "hook ran"
+    script = f'#!/bin/sh\necho ran > "{marker.as_posix()}"\nexit 1\n'
+    hooks = repo / ".git" / "hooks"
+    for name in ("pre-commit", "commit-msg", "post-commit", "post-checkout"):
+        (hooks / name).write_text(script, encoding="utf-8", newline="\n")
+        os.chmod(hooks / name, 0o755)
+    # A repository-configured hooks directory must be overridden as well.
+    custom = repo / "custom-hooks"
+    custom.mkdir()
+    for name in ("pre-commit", "post-checkout"):
+        (custom / name).write_text(script, encoding="utf-8", newline="\n")
+        os.chmod(custom / name, 0o755)
+    git(repo, "config", "core.hooksPath", str(custom))
+    base = git(repo, "rev-parse", "HEAD")
+
+    path = manager.create(str(repo), "hooks", base, "sentinel/attempt/hooks")
+    (path / "app.py").write_text("hooked\n", encoding="utf-8")
+    result = manager.capture(path, base_sha=base, write_paths=[], message="capture")
+
+    assert result.no_change is False
+    assert not marker.exists()
+
+
+def test_configured_clean_filter_command_is_not_executed(
+    repo: Path, manager: WorkspaceManager, tmp_path: Path
+) -> None:
+    """The hardened Git runner refuses to inspect filtered files at all, so a
+    repository-configured clean filter can never run during capture. The
+    cost is that such repositories are unsupported (recorded limitation)."""
+
+    marker = tmp_path / "filter ran"
+    (repo / ".gitattributes").write_text("*.txt filter=evil\n", encoding="utf-8")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "attributes")
+    command = "sh -c \"echo x > '" + marker.as_posix() + "'; cat\""
+    git(repo, "config", "filter.evil.clean", command)
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "filter", base, "sentinel/attempt/filter")
+    (path / "notes.txt").write_text("content\n", encoding="utf-8")
+
+    with pytest.raises(AppError) as error:
+        manager.capture(path, base_sha=base, write_paths=[], message="capture")
+
+    assert error.value.code == "GIT_COMMAND_FAILED"
+    assert not marker.exists()
+    assert manager.head(path) == base  # nothing was committed
+
+
+# -- creation guards ----------------------------------------------------------------
+
+
+def test_create_refuses_bad_ids_bases_branches_and_existing_paths(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    base = git(repo, "rev-parse", "HEAD")
+    cases = [
+        ("../escape", base, None, "WORKSPACE_ID_INVALID"),
+        ("ok-1", "HEAD", None, "WORKSPACE_BASE_UNRESOLVED"),
+        ("ok-2", base, "main", "WORKSPACE_REF_NOT_MANAGED"),
+        ("ok-3", base, "sentinel/../x", "WORKSPACE_REF_NOT_MANAGED"),
+    ]
+    for workspace_id, base_sha, branch, code in cases:
+        with pytest.raises(AppError) as error:
+            manager.create(str(repo), workspace_id, base_sha, branch)
+        assert error.value.code == code, workspace_id
+    (manager.managed_root / "taken").mkdir()
+    with pytest.raises(AppError) as exists:
+        manager.create(str(repo), "taken", base, None)
+    assert exists.value.code == "WORKSPACE_EXISTS"
+    assert git(repo, "branch", "--show-current") == "main"
+    assert git(repo, "branch", "--list", "sentinel/*") == ""
+
+
+def test_resolve_commit_rejects_unknown_revisions_and_non_commits(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    root = str(repo)
+    assert manager.resolve_commit(root, "main") == git(repo, "rev-parse", "HEAD")
+    tree = git(repo, "rev-parse", "HEAD^{tree}")
+    for revision in ("does-not-exist", tree, "--output=x"):
+        with pytest.raises(AppError) as error:
+            manager.resolve_commit(root, revision)
+        assert error.value.code == "WORKSPACE_BASE_UNRESOLVED", revision
+
+
+def test_base_is_pinned_even_when_the_user_branch_moves(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    base = manager.resolve_commit(str(repo), "main")
+    path = manager.create(str(repo), "pinned", base, "sentinel/attempt/pinned")
+    (repo / "app.py").write_text("user moved on\n", encoding="utf-8")
+    git(repo, "commit", "-qam", "user commit")
+
+    assert manager.head(path) == base
+    assert (path / "app.py").read_text(encoding="utf-8") == "def value():\n    return 1\n"
+
+
+# -- results and refs -----------------------------------------------------------------
+
+
+def test_pinned_result_survives_branch_deletion_worktree_removal_and_gc(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "keep", base, "sentinel/attempt/keep")
+    (path / "app.py").write_text("keep me\n", encoding="utf-8")
+    result = manager.capture(path, base_sha=base, write_paths=[], message="keep")
+    ref = manager.pin_result(str(repo), "keep", result.result_sha)
+
+    assert ref == "refs/heads/sentinel/results/keep"
+    assert manager.pin_result(str(repo), "keep", result.result_sha) == ref  # same sha is fine
+    with pytest.raises(AppError) as conflict:
+        manager.pin_result(str(repo), "keep", base)
+    assert conflict.value.code == "WORKSPACE_RESULT_REF_CONFLICT"
+
+    manager.remove(str(repo), path, attempt_live=False)
+    git(repo, "branch", "-D", "sentinel/attempt/keep")
+    git(repo, "reflog", "expire", "--expire=now", "--all")
+    git(repo, "gc", "-q", "--prune=now")
+    assert git(repo, "show", f"{result.result_sha}:app.py") == "keep me"
+    assert manager.read_ref(str(repo), ref) == result.result_sha
+
+
+def test_registered_worktrees_tracks_create_and_remove(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "listed", base, None)
+    canonical = WorkspaceManager._canonical(path)
+    assert canonical in manager.registered_worktrees(str(repo))
+    manager.remove(str(repo), path, attempt_live=False)
+    assert canonical not in manager.registered_worktrees(str(repo))
+
+
+def test_ensure_ref_does_not_overwrite_an_existing_ref(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    base = git(repo, "rev-parse", "HEAD")
+    ws = manager.create(str(repo), "ens", base, "sentinel/attempt/ens")
+    (ws / "n.txt").write_text("n\n", encoding="utf-8")
+    newer = manager.capture(ws, base_sha=base, write_paths=[], message="n").result_sha
+    ref = "refs/heads/sentinel/integration/ensure"
+    assert manager.ensure_ref(str(repo), ref, base) == base
+    assert manager.ensure_ref(str(repo), ref, newer) == base
+    assert manager.read_ref(str(repo), ref) == base
+    assert manager.read_ref(str(repo), "refs/heads/sentinel/none") is None
+
+
+def test_resolution_attempt_completes_a_conflicted_merge(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    """Phase 5 resolution tasks start from target + conflicting merge; the
+    captured result must be a real two-parent merge with markers removed."""
+
+    base = git(repo, "rev-parse", "HEAD")
+    one = manager.create(str(repo), "r1", base, "sentinel/attempt/r1")
+    two = manager.create(str(repo), "r2", base, "sentinel/attempt/r2")
+    (one / "app.py").write_text("def value():\n    return 'one'\n", encoding="utf-8")
+    (two / "app.py").write_text("def value():\n    return 'two'\n", encoding="utf-8")
+    r1 = manager.capture(one, base_sha=base, write_paths=[], message="one").result_sha
+    r2 = manager.capture(two, base_sha=base, write_paths=[], message="two").result_sha
+
+    resolver = manager.create(str(repo), "resolve", r1, "sentinel/attempt/resolve")
+    assert manager.merge_into(resolver, r2, "merge r2") == ["app.py"]
+    unresolved = manager.capture(resolver, base_sha=r1, write_paths=[], message="unresolved")
+    assert unresolved.conflict_markers == ["app.py"]
+
+    # A second resolver actually fixes the markers before capture.
+    fixer = manager.create(str(repo), "resolve-2", r1, "sentinel/attempt/resolve-2")
+    manager.merge_into(fixer, r2, "merge r2")
+    (fixer / "app.py").write_text("def value():\n    return 'both'\n", encoding="utf-8")
+    fixed = manager.capture(fixer, base_sha=r1, write_paths=[], message="resolved")
+    assert fixed.conflict_markers == []
+    parents = git(repo, "rev-list", "--parents", "-n", "1", fixed.result_sha).split()
+    assert parents[1:] == [r1, r2]
+
+
+# -- concurrency and model-based checks ----------------------------------------------
+
+
+def test_parallel_captures_in_separate_workspaces_are_isolated(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    import threading
+
+    base = git(repo, "rev-parse", "HEAD")
+    count = 4
+    paths = [manager.create(str(repo), f"par-{i}", base, f"sentinel/attempt/par-{i}")
+             for i in range(count)]
+    for index, path in enumerate(paths):
+        (path / "app.py").write_text(f"value = {index}\n", encoding="utf-8")
+        (path / f"own_{index}.txt").write_text("mine\n", encoding="utf-8")
+    barrier = threading.Barrier(count)
+    results: dict[int, object] = {}
+    errors: list[BaseException] = []
+
+    def work(index: int) -> None:
+        try:
+            barrier.wait(timeout=30)
+            results[index] = manager.capture(paths[index], base_sha=base, write_paths=[],
+                                             message=f"par {index}")
+        except BaseException as exc:  # surfaced by the assertion below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=work, args=(i,)) for i in range(count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=120)
+    assert errors == []
+    assert len({results[i].result_sha for i in range(count)}) == count
+    for index in range(count):
+        sha = results[index].result_sha
+        assert git(repo, "show", f"{sha}:app.py") == f"value = {index}"
+        assert sorted(f.path for f in results[index].files) == ["app.py", f"own_{index}.txt"]
+
+
+def test_randomized_edits_capture_exactly_what_each_workspace_changed(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    """Fixed-seed model check: for several workspaces sharing one base, the
+    captured file set equals the model's expected set, each result's content
+    matches what that workspace wrote, and the user checkout never changes."""
+
+    import random
+
+    rng = random.Random(20260922)
+    base = git(repo, "rev-parse", "HEAD")
+    (repo / "user_dirty.txt").write_text("dirty\n", encoding="utf-8")
+    tracked = ["app.py", "old_name.txt"]
+    for round_index in range(6):
+        path = manager.create(str(repo), f"rand-{round_index}", base,
+                              f"sentinel/attempt/rand-{round_index}")
+        expected: dict[str, str | None] = {}
+        for _ in range(rng.randint(1, 6)):
+            action = rng.choice(["add", "modify", "delete"])
+            if action == "add":
+                name = f"gen/{rng.randint(0, 9)}.txt"
+                content = f"r{round_index}-{rng.random()}\n"
+                (path / name).parent.mkdir(exist_ok=True)
+                (path / name).write_text(content, encoding="utf-8")
+                expected[name] = content
+            else:
+                name = rng.choice(tracked)
+                if not (path / name).exists():
+                    continue
+                if action == "modify":
+                    content = f"m{round_index}-{rng.random()}\n"
+                    (path / name).write_text(content, encoding="utf-8")
+                    expected[name] = content
+                else:
+                    (path / name).unlink()
+                    expected[name] = None
+        result = manager.capture(path, base_sha=base, write_paths=[], message="rand")
+        assert {f.path for f in result.files} == set(expected), round_index
+        for name, content in expected.items():
+            if content is None:
+                assert next(f for f in result.files if f.path == name).status == "deleted"
+            else:
+                assert git(repo, "show", f"{result.result_sha}:{name}") == content.rstrip("\n")
+    assert git(repo, "rev-parse", "HEAD") == base
+    assert git(repo, "branch", "--show-current") == "main"
+    assert git(repo, "status", "--porcelain") == "?? user_dirty.txt"

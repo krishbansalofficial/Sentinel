@@ -848,6 +848,34 @@ def migration_012_coord_execution(connection: sqlite3.Connection) -> None:
     )
 
 
+def migration_013_coord_workspace_retention(connection: sqlite3.Connection) -> None:
+    """Multi-agent coordination Phase 2: explicit workspace retention.
+
+    `coord_workspaces.state` walks CREATING -> READY -> CAPTURED -> REMOVING ->
+    REMOVED (or FAILED). A row is written before any Git side effect, so a
+    crash leaves a record `WorkspaceRegistry.reconcile` can settle instead of
+    an unknown directory. `capture_json` is the immutable capture manifest and
+    `result_ref` is the managed ref that keeps the result commit reachable
+    after the worktree itself is removed.
+    """
+
+    for name, definition in (
+        ("capture_json", "TEXT NULL"),
+        ("result_ref", "TEXT NULL"),
+        ("detail", "TEXT NULL"),
+        ("removed_at", "TEXT NULL"),
+    ):
+        _add_column(connection, "coord_workspaces", name, definition)
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coord_workspaces_change_state "
+        "ON coord_workspaces(change_id, state)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coord_workspaces_attempt "
+        "ON coord_workspaces(attempt_id)"
+    )
+
+
 MIGRATIONS = (
     Migration(1, "legacy_change_store", migration_001_legacy_change_store),
     Migration(2, "change_runtime_core", migration_002_change_runtime_core),
@@ -861,6 +889,7 @@ MIGRATIONS = (
     Migration(10, "descendant_processes", migration_010_descendant_processes),
     Migration(11, "coord_tasks_and_dependencies", migration_011_coord_tasks_and_dependencies),
     Migration(12, "coord_execution", migration_012_coord_execution),
+    Migration(13, "coord_workspace_retention", migration_013_coord_workspace_retention),
 )
 
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version

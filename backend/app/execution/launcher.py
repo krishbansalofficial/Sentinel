@@ -150,6 +150,7 @@ class AgentLauncher:
     def launch(
         self, change_id: UUID, repository_path: str, request: AgentLaunchRequest,
         output_limit_bytes: int,
+        *, on_started: Callable[[AgentRun], None] | None = None,
     ) -> AgentRun:
         # Revalidate in case a model was built with model_construct.
         request = AgentLaunchRequest.model_validate(request.model_dump())
@@ -215,6 +216,15 @@ class AgentLauncher:
                 })
                 started = state.record
             self._notify(started)
+            # Per-launch hook (multi-agent coordination): lets a caller durably
+            # record the run id and pid before the blocking launch returns.
+            # Like on_update, its failure never changes what the agent does;
+            # callers must not treat it as a correctness boundary.
+            if on_started is not None:
+                try:
+                    on_started(started)
+                except Exception:
+                    pass
 
         def process_factory(arguments, process_cwd, process_env):
             process = spawn_restricted_supervised(

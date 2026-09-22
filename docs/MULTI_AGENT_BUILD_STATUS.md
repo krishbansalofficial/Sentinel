@@ -13,15 +13,15 @@ Phase 0-1 landed as 10 commits `ef60364..db6aa45`. The older local branch
 
 Session rules (user instructions): whenever a session is stopped or paused,
 update this file first, then check with the user before resuming
-implementation. When the session nears its usage limit (~95%), update all
-docs, then commit and push to this branch (never `master`).
+implementation. When session token usage reaches ~95% of its budget, update
+all docs, then commit and push to this branch (never `master`).
 
 ## How to resume this work
 
 1. Read this file's "Current state" and "Next concrete action" sections first.
 2. Read `docs/MULTI_AGENT_IMPLEMENTATION_PLAN.md` section 14 for the full phase
-   order. Phases 0-1 are done; Phase 2 is written but untested; Phases 3-5
-   have schema only.
+   order. Phases 0-2 are done; Phases 3-5 have schema only (migrations
+   12-13).
 3. Run the focused test commands listed under "Test evidence" to confirm the
    recorded state before adding new work; do not assume it still holds.
 4. Continue at the next incomplete phase. Do not restart completed phases.
@@ -32,11 +32,13 @@ docs, then commit and push to this branch (never `master`).
 - Phase 1 (durable tasks and dependency graph): **backend + CLI done, tests
   passing, committed and pushed**. No frontend slice yet (see "Frontend
   status" below — this is a known, explicitly tracked gap, not an oversight).
-- Phase 2 (isolated workspaces and immutable results): **code and tests
-  written, tests NOT yet run**. `backend/app/coordination/workspaces.py` and
-  `backend/tests/coordination/test_workspaces.py` exist and are committed. The
-  test run was stopped by the user before it executed, so there is no pass/fail
-  evidence for Phase 2 yet. Do not treat Phase 2 as done.
+- Phase 2 (isolated workspaces and immutable results): **done**, tests
+  passing (63 in the two workspace suites). `WorkspaceManager` does the Git
+  work. `WorkspaceRegistry` adds durable records, explicit retention states,
+  journaled transitions, crash reconciliation, and result pinning. It is wired
+  into `RuntimeServices.workspaces` but no dispatcher calls it yet; that is
+  Phase 3. The Phase 2 exit (two attempts edit the same file without
+  affecting each other or the user) is proven through the durable registry.
 - Phases 3-5 (scheduler/dispatch, recovery/fencing, integration): **schema
   only** (migration 12, applied and green in the existing tests). No service
   code yet. See "Phases 2-5 — work in progress" below.
@@ -44,12 +46,13 @@ docs, then commit and push to this branch (never `master`).
 
 ## Next concrete action
 
-Wait for the user's go-ahead (session rule above). Then:
-
-1. Run `python -m pytest backend/tests/coordination/test_workspaces.py -q -rA`
-   and fix any failures. This suite has never been executed.
-2. Record the actual result under "Phase 2 — test evidence" below, then
-   continue at continuation step 3 (Phase 3 scheduler).
+Wait for the user's go-ahead (session rule above). Then continue at
+continuation step 3 (Phase 3 scheduler). The first Phase 3 item is to persist
+the task execution fields (`executable`, `args`, `write_paths`,
+`verification`, `resources`). They are already in `TaskCreateRequest` /
+`TaskEditRequest` / `TaskView` and in `openapi.json`, but the repository
+and service do not store them yet, so the API currently **accepts and drops
+them**. Fix this before any frontend relies on them.
 
 ## Phase 0 — decision log
 
@@ -384,7 +387,7 @@ that is safe against PID reuse), `coord_scheduler_owner` (singleton + epoch),
    persisted before a CAS `update-ref`, and restart reconciles ref state.
    Resolution tasks start from target + conflicting merge.
 
-### Phase 2 — what was built (committed, untested)
+### Phase 2 — what was built
 
 - `backend/app/coordination/workspaces.py` (`WorkspaceManager`). All Git calls
   go through `GitRepositoryInspector._capture_git`, with hooks neutralized via
@@ -421,17 +424,176 @@ that is safe against PID reuse), `coord_scheduler_owner` (singleton + epoch),
   live/foreign/`..` paths; and (Windows only) an NTFS junction escape refused
   plus a case-aliased workspace path still recognized.
 
+### Phase 2 — completion (durable retention layer and hardening)
+
+- Migration 13 (`coord_workspace_retention`) adds `capture_json`,
+  `result_ref`, `detail`, and `removed_at` to `coord_workspaces`, plus
+  `(change_id, state)` and `attempt_id` indexes. It is append-only, and
+  migration 12 is unchanged.
+- Contracts: `WorkspaceState` (`CREATING → READY → CAPTURED → REMOVING →
+  REMOVED`, or `FAILED`), `WorkspacePurpose` (`ATTEMPT`/`INTEGRATION`), and
+  six `workspace.*` journal events.
+- `backend/app/coordination/workspace_registry.py` (`WorkspaceRegistry`).
+  Each Git side effect is bracketed in three steps: first an intent row plus
+  its journal event (one transaction), then Git with no transaction open,
+  then an outcome transition compare-and-set on the intent state.
+  - `provision()` pins `base_revision` to a SHA before writing anything. Git
+    failure → `FAILED` with detail.
+  - `capture()` is idempotent (`CAPTURED` returns the stored record with no
+    Git call) and pins the result under `refs/heads/sentinel/results/<id>`
+    (create-once CAS). `WORKSPACE_CORRUPT` → `FAILED`. A diverged or
+    oversized result leaves the workspace `READY` for inspection.
+  - `remove()` retention: only `CAPTURED`/`FAILED` (and a retried
+    `REMOVING`) may be removed. `READY` never is, because it may hold
+    uncaptured work. A live attempt → `WORKSPACE_ACTIVE`. A directory is
+    deleted only if Git lists it as a worktree of the recorded repository;
+    otherwise the call fails with `WORKSPACE_UNOWNED_DIRECTORY` and leaves
+    the directory in place. The result ref survives removal.
+  - `reconcile()` handles crash windows:
+    - `CREATING` → `READY` only if Git registers the worktree *at its
+      base*, otherwise `FAILED`. It never re-runs creation.
+    - `REMOVING` → `REMOVED` once the directory is gone, else reported as
+      pending.
+    - `READY` with its directory missing → `FAILED`.
+    - `CAPTURED` with its directory missing → `REMOVED`.
+    - Unrecorded directories under the managed root are reported as
+      orphans and never deleted.
+  - Git worktree administration is serialized per repository identity, and
+    capture/remove per workspace. Across registries, the database
+    state-guard CAS is the backstop.
+  - Wired as `RuntimeServices.workspaces` (managed root
+    `<db dir>/coord-workspaces`). `reconcile()` is deliberately **not** run at
+    startup yet: it must run under scheduler ownership, which is Phase 3
+    lifespan work.
+- `WorkspaceManager` hardening:
+  - **Bug fixed:** "no change" used to mean "nothing staged", so an agent
+    that committed its own work, or a capture replayed after a crash
+    between `git commit` and the database write, was reported as
+    `no_change` and its work was dropped. Now `no_change` means
+    `HEAD == base`.
+  - Capture refuses:
+    - `WORKSPACE_CORRUPT`: a broken or redirected `.git` link. Without this
+      check, Git would discover an enclosing repository and commit into
+      it; proven with a managed root inside an outer repo.
+    - `WORKSPACE_BASE_DIVERGED`: HEAD no longer descends from the pinned
+      base.
+    - `WORKSPACE_RESULT_TOO_LARGE`: more than 2000 files, counting the
+      agent's own commits. The index is restored and the worktree is
+      untouched.
+  - `sensitive_committed` reports credential-pattern files that reached the
+    result through the agent's own commits. Working-tree exclusion cannot
+    drop those without rewriting history.
+  - New `pin_result`, `is_ancestor`, `registered_worktrees`, `prune`, and
+    `CaptureResult.to_manifest`.
+
 ### Phase 2 — test evidence
 
-**None yet.** The first run
-(`python -m pytest backend/tests/coordination/test_workspaces.py -q -rA`) was
-stopped by the user before execution. Run it first when resuming.
+First run (library only): `test_workspaces.py`, **11 passed**, including the
+Windows-only NTFS junction escape test.
+
+Completion run (Windows 11, Python 3.14, system git):
+
+```
+python -m pytest backend/tests/coordination/test_workspaces.py backend/tests/coordination/test_workspace_registry.py -q
+```
+Result: **63 passed, 0 failed, 0 skipped**:
+
+- `test_workspaces.py`: 31 tests, 20 of them new. They cover:
+  - agent-committed work
+  - agent commit plus uncommitted edits
+  - recapture idempotency
+  - deletes and unicode/space paths
+  - agent-committed secrets
+  - base divergence
+  - the oversized-result bound, including agent commits
+  - a broken `.git` link inside an outer repo
+  - repo hooks, including a repo-configured `core.hooksPath` that never
+    runs
+  - content filters, which are refused and never executed
+  - creation guards
+  - non-commit and unknown bases
+  - base pinning while the user's branch moves
+  - result pin surviving branch deletion + worktree removal +
+    `gc --prune=now`
+  - worktree registration
+  - `ensure_ref` never overwriting
+  - a resolution attempt producing a two-parent merge
+  - four parallel captures behind a barrier
+  - a fixed-seed randomized model check over six workspaces
+- `test_workspace_registry.py`: 32 tests. They cover:
+  - the full lifecycle and journal order, with the hash chain verified by
+    `ReplayService`
+  - the Phase 2 exit through the registry
+  - scoping
+  - duplicate ids
+  - no row on an unresolvable base
+  - `FAILED` on a Git create failure
+  - 404s
+  - `READY` and live-attempt removal refusals
+  - idempotent removal that keeps the result
+  - a foreign directory at the managed path never being deleted
+  - corrupt → `FAILED`, diverged → stays `READY`
+  - capture idempotency: no second commit, one journal event
+  - journal failure rolling back the capture transition, with retry
+    completing from the committed state
+  - crash injection (a `BaseException`, like a killed process) before/after
+    Git create, after the capture commit, and before/after Git removal,
+    each followed by `reconcile()`
+  - externally deleted directories
+  - orphans reported but never deleted
+  - reconcile as a no-op on settled state
+  - six concurrent provisions
+  - four concurrent captures of one workspace, and two separate registries
+    racing, each yielding exactly one result
+  - migration 12 → 13 over an existing row
+
+Mutation check: each key guard was broken one at a time, and the targeted
+test caught all 9. The broken guards were:
+
+- the `no_change` semantics
+- the worktree integrity check
+- the ancestry check
+- hook neutralization
+- the bound counting commits
+- the removal registration check
+- `READY` removability
+- capture idempotency
+- reconcile's base check
+
+The script is not committed. It replaced one line at a time and restored the
+source.
+
+Contract sync: `openapi.json` regenerated, then `npm run api:generate`,
+`api:check`, and `typecheck` all passed. The snapshot also carries the
+Phase 3 contract additions already in `contracts/models.py`: new
+`JournalEventType` members and task execution fields, which are not persisted
+yet (see "Next concrete action").
+
+Full regression after Phase 2 (`python -m pytest backend/tests`, run from
+the repository root): **875 passed, 5 skipped, 0 failed** (9m14s). The skips
+are pre-existing platform skips.
+
+### Phase 2 — limitations
+
+- Repositories whose files use Git content filters (for example Git LFS) are
+  refused by the hardened runner (`GIT_COMMAND_FAILED`). This is safe, since
+  a filter command never runs, but those repositories cannot host attempts.
+- Declared write paths are checked after the run, not enforced during it.
+  Worktrees share Git metadata with the source repository and are not a
+  sandbox (plan section 2).
+- A sensitive file the agent commits itself is reported
+  (`sensitive_committed`), not removed. The Phase 3/5 caller must treat it
+  as a rejection reason.
+- In-process locks serialize Git administration within one backend. Across
+  processes, the database CAS prevents double transitions, but two backends
+  could still race `git worktree add`. The Phase 3 single-owner scheduler
+  epoch is what excludes that.
 
 ### Continuation steps
 
 1. ~~Migration 12~~ done.
-2. `workspaces.py` + real-repo tests: written and committed, **not yet run**.
-   Run, fix, and record evidence.
+2. ~~`workspaces.py` + real-repo tests~~ done. ~~Durable registry,
+   retention, reconciliation (migration 13)~~ done (63 passed).
 3. Launcher `on_started`, `resources.py`, attempts, `scheduler.py`, lifespan
    wiring, routes, CLI, fake-launcher tests → commit Phase 3.
 4. Reconciliation, cancellation, retry, quarantine, crash tests → commit

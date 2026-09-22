@@ -826,6 +826,37 @@ class JournalEventType(StrEnum):
     TASK_DEPENDENCIES_REPLACED = "task.dependencies.replaced"
     TASK_SUBMITTED = "task.submitted"
     TASK_CANCELLED = "task.cancelled"
+    TASK_STATE_CHANGED = "task.state_changed"
+    TASK_CANCEL_REQUESTED = "task.cancel_requested"
+    TASK_RETRIED = "task.retried"
+    TASK_RECOVERED = "task.recovered"
+    ATTEMPT_CLAIMED = "attempt.claimed"
+    ATTEMPT_WORKSPACE_READY = "attempt.workspace_ready"
+    ATTEMPT_DISPATCHED = "attempt.dispatched"
+    ATTEMPT_RUN_ASSOCIATED = "attempt.run_associated"
+    ATTEMPT_COMPLETED = "attempt.completed"
+    ATTEMPT_FAILED = "attempt.failed"
+    ATTEMPT_CANCELLED = "attempt.cancelled"
+    ATTEMPT_LOST = "attempt.lost"
+    ATTEMPT_STALE_REJECTED = "attempt.stale_rejected"
+    RESOURCE_QUARANTINED = "resource.quarantined"
+    RESOURCE_RELEASED = "resource.released"
+    COORDINATION_PAUSED = "coordination.paused"
+    COORDINATION_RESUMED = "coordination.resumed"
+    INTEGRATION_QUEUED = "integration.queued"
+    INTEGRATION_INTENT = "integration.intent"
+    INTEGRATION_CONFLICT = "integration.conflict"
+    INTEGRATION_CHECKS_FAILED = "integration.checks_failed"
+    INTEGRATION_BASE_MOVED = "integration.base_moved"
+    INTEGRATION_APPLIED = "integration.applied"
+    INTEGRATION_UNCERTAIN = "integration.uncertain"
+    INTEGRATION_RESOLUTION_REQUESTED = "integration.resolution_requested"
+    WORKSPACE_CREATING = "workspace.creating"
+    WORKSPACE_READY = "workspace.ready"
+    WORKSPACE_CAPTURED = "workspace.captured"
+    WORKSPACE_FAILED = "workspace.failed"
+    WORKSPACE_REMOVING = "workspace.removing"
+    WORKSPACE_REMOVED = "workspace.removed"
 
 
 class JournalEvent(ContractModel):
@@ -1152,6 +1183,24 @@ class ErrorEnvelope(ContractModel):
     error: ErrorDetail
 
 
+class TaskResourceRequest(ContractModel):
+    """An exclusive managed resource an attempt needs for its whole execution
+    stage, acquired all-or-none together with an execution slot. Keys are
+    canonical and exact (no wildcards); see plan section 7."""
+
+    key: Annotated[str, StringConstraints(
+        pattern=r"^(port|db|service|lock):[A-Za-z0-9._:-]{1,120}$")]
+    units: int = Field(default=1, ge=1, le=64)
+
+
+def _unique_resource_keys(
+    values: list[TaskResourceRequest] | None,
+) -> list[TaskResourceRequest] | None:
+    if values is not None and len({item.key for item in values}) != len(values):
+        raise ValueError("duplicate resource keys are not allowed")
+    return values
+
+
 class TaskCreateRequest(ContractModel):
     title: TrimmedTitle
     instructions: TrimmedIntent
@@ -1161,6 +1210,15 @@ class TaskCreateRequest(ContractModel):
     priority: int = Field(default=0, ge=0, le=1000)
     max_attempts: int = Field(default=3, ge=1, le=10)
     execution_timeout_seconds: int = Field(default=900, ge=1, le=86400)
+    # Execution (Phase 3). args may contain the placeholders {instructions}
+    # and {instructions_file}; the dispatcher substitutes them per attempt.
+    executable: ExecutableName | None = None
+    args: list[CommandArgument] = Field(default_factory=list, max_length=128)
+    write_paths: list[PathPattern] = Field(default_factory=list, max_length=128)
+    verification: list[VerificationRequest] = Field(default_factory=list, max_length=8)
+    resources: list[TaskResourceRequest] = Field(default_factory=list, max_length=16)
+
+    _resources_unique = field_validator("resources")(_unique_resource_keys)
 
 
 class TaskEditRequest(ContractModel):
@@ -1172,6 +1230,13 @@ class TaskEditRequest(ContractModel):
     priority: int | None = Field(default=None, ge=0, le=1000)
     max_attempts: int | None = Field(default=None, ge=1, le=10)
     execution_timeout_seconds: int | None = Field(default=None, ge=1, le=86400)
+    executable: ExecutableName | None = None
+    args: list[CommandArgument] | None = Field(default=None, max_length=128)
+    write_paths: list[PathPattern] | None = Field(default=None, max_length=128)
+    verification: list[VerificationRequest] | None = Field(default=None, max_length=8)
+    resources: list[TaskResourceRequest] | None = Field(default=None, max_length=16)
+
+    _resources_unique = field_validator("resources")(_unique_resource_keys)
 
 
 class TaskDependenciesRequest(ContractModel):
@@ -1214,12 +1279,205 @@ class TaskView(ContractModel):
     created_at: AwareDatetime
     updated_at: AwareDatetime
     submitted_at: AwareDatetime | None = None
+    executable: str | None = None
+    args: list[str] = Field(default_factory=list)
+    write_paths: list[str] = Field(default_factory=list)
+    verification: list[VerificationRequest] = Field(default_factory=list)
+    resources: list[TaskResourceRequest] = Field(default_factory=list)
+    attempt_count: int = Field(default=0, ge=0)
+    current_attempt_id: UUID | None = None
+    next_eligible_at: AwareDatetime | None = None
+    pinned_base_sha: str | None = None
+    accepted_result_sha: str | None = None
+    resolves_integration_id: UUID | None = None
 
 
 class TaskListResponse(ContractModel):
     items: list[TaskView]
     count: int = Field(ge=0)
     total: int = Field(ge=0)
+
+
+class TaskRetryRequest(ContractModel):
+    expected_revision: int = Field(ge=1)
+
+
+class TaskRecoverRequest(ContractModel):
+    """Operator confirmation that an uncertain attempt's processes are gone.
+
+    Sentinel could not confirm termination itself; this records a human
+    attestation (journaled with the reason) and releases quarantined
+    resources. It is refused while Sentinel still observes the run alive."""
+
+    expected_revision: int = Field(ge=1)
+    confirmed_stopped: Literal[True]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class AttemptState(StrEnum):
+    RESERVED = "RESERVED"
+    STARTING = "STARTING"
+    RUNNING = "RUNNING"
+    STOP_REQUESTED = "STOP_REQUESTED"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    LOST = "LOST"
+    CANCELLED = "CANCELLED"
+
+
+class WorkspaceState(StrEnum):
+    """Retention states of a managed worktree (plan section 9).
+
+    CREATING is written before `git worktree add`; REMOVING before the
+    directory is deleted. Only CAPTURED (result pinned by a managed ref) and
+    FAILED workspaces are eligible for cleanup; READY may hold uncaptured
+    agent work and is never removed implicitly."""
+
+    CREATING = "CREATING"
+    READY = "READY"
+    CAPTURED = "CAPTURED"
+    REMOVING = "REMOVING"
+    REMOVED = "REMOVED"
+    FAILED = "FAILED"
+
+
+class WorkspacePurpose(StrEnum):
+    ATTEMPT = "ATTEMPT"
+    INTEGRATION = "INTEGRATION"
+
+
+class AttemptView(ContractModel):
+    id: UUID
+    task_id: UUID
+    change_id: UUID
+    attempt_number: int = Field(ge=1)
+    state: AttemptState
+    live: bool
+    scheduler_epoch: int
+    generation: int
+    run_id: UUID | None = None
+    workspace_path: str | None = None
+    workspace_branch: str | None = None
+    base_sha: str | None = None
+    result_sha: str | None = None
+    result: dict[str, Any] | None = None
+    dispatch_state: str | None = None
+    lease_expires_at: AwareDatetime
+    last_heartbeat_at: AwareDatetime | None = None
+    cancel_requested_at: AwareDatetime | None = None
+    started_at: AwareDatetime | None = None
+    ended_at: AwareDatetime | None = None
+    failure_code: str | None = None
+    failure_detail: str | None = None
+    created_at: AwareDatetime
+
+
+class AttemptListResponse(ContractModel):
+    items: list[AttemptView]
+
+
+class IntegrationState(StrEnum):
+    PENDING = "PENDING"
+    BUILDING = "BUILDING"
+    CHECKING = "CHECKING"
+    ADVANCING = "ADVANCING"
+    APPLIED = "APPLIED"
+    CONFLICT = "CONFLICT"
+    CHECK_FAILED = "CHECK_FAILED"
+    UNCERTAIN = "UNCERTAIN"
+    RESOLVED = "RESOLVED"
+    CANCELLED = "CANCELLED"
+
+
+class IntegrationCheckResult(ContractModel):
+    executable: str
+    args: list[str] = Field(default_factory=list)
+    exit_code: int | None = None
+    passed: bool
+    timed_out: bool = False
+    duration_ms: int = Field(ge=0)
+    stdout: str = ""
+    stderr: str = ""
+    output_truncated: bool = False
+
+
+class IntegrationView(ContractModel):
+    id: UUID
+    change_id: UUID
+    task_id: UUID
+    attempt_id: UUID
+    target_ref: str
+    source_sha: str
+    expected_target_sha: str | None = None
+    candidate_sha: str | None = None
+    state: IntegrationState
+    generation: int
+    build_count: int
+    checks: list[IntegrationCheckResult] = Field(default_factory=list)
+    conflict_paths: list[str] = Field(default_factory=list)
+    detail: str | None = None
+    resolved_by_task_id: UUID | None = None
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+
+
+class IntegrationListResponse(ContractModel):
+    items: list[IntegrationView]
+    target_ref: str | None = None
+    target_sha: str | None = None
+
+
+class IntegrationResolveRequest(ContractModel):
+    """Create a resolution task for a conflicted integration. The new task's
+    workspace starts at the current integration target with the conflicting
+    source merged in and conflict markers left for the agent to resolve."""
+
+    title: TrimmedTitle | None = None
+    instructions: TrimmedIntent | None = None
+    adapter: ShortText
+    executable: ExecutableName
+    args: list[CommandArgument] = Field(default_factory=list, max_length=128)
+    assigned_actor_id: UUID | None = None
+
+
+class CoordinationCapacity(ContractModel):
+    resource_key: str
+    capacity: int = Field(ge=0)
+    held_units: int = Field(ge=0)
+    quarantined_units: int = Field(ge=0)
+
+
+class CoordinationQueueItem(ContractModel):
+    task_id: UUID
+    title: str
+    state: TaskState
+    waiting_reason: str | None = None
+    effective_priority: int
+    enqueue_seq: int
+
+
+class CoordinationRecoveryItem(ContractModel):
+    task_id: UUID
+    attempt_id: UUID
+    attempt_state: AttemptState
+    failure_code: str | None = None
+    quarantined_resources: list[str] = Field(default_factory=list)
+    detail: str | None = None
+
+
+class CoordinationStatus(ContractModel):
+    change_id: UUID
+    dispatch_enabled: bool
+    dispatch_paused: bool
+    scheduler_epoch: int | None = None
+    scheduler_owned: bool
+    capacity: list[CoordinationCapacity] = Field(default_factory=list)
+    queue: list[CoordinationQueueItem] = Field(default_factory=list)
+    active_attempts: int = Field(ge=0)
+    integrations_pending: int = Field(ge=0)
+    integration_ref: str | None = None
+    recovery: list[CoordinationRecoveryItem] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
 
 
 def utc_now() -> datetime:

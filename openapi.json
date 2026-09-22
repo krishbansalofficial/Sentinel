@@ -3248,7 +3248,38 @@
           "task.edited",
           "task.dependencies.replaced",
           "task.submitted",
-          "task.cancelled"
+          "task.cancelled",
+          "task.state_changed",
+          "task.cancel_requested",
+          "task.retried",
+          "task.recovered",
+          "attempt.claimed",
+          "attempt.workspace_ready",
+          "attempt.dispatched",
+          "attempt.run_associated",
+          "attempt.completed",
+          "attempt.failed",
+          "attempt.cancelled",
+          "attempt.lost",
+          "attempt.stale_rejected",
+          "resource.quarantined",
+          "resource.released",
+          "coordination.paused",
+          "coordination.resumed",
+          "integration.queued",
+          "integration.intent",
+          "integration.conflict",
+          "integration.checks_failed",
+          "integration.base_moved",
+          "integration.applied",
+          "integration.uncertain",
+          "integration.resolution_requested",
+          "workspace.creating",
+          "workspace.ready",
+          "workspace.captured",
+          "workspace.failed",
+          "workspace.removing",
+          "workspace.removed"
         ],
         "title": "JournalEventType",
         "type": "string"
@@ -4048,6 +4079,15 @@
             "title": "Adapter",
             "type": "string"
           },
+          "args": {
+            "items": {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Args",
+            "type": "array"
+          },
           "assigned_actor_id": {
             "anyOf": [
               {
@@ -4071,6 +4111,19 @@
               }
             ],
             "title": "Creator Actor Id"
+          },
+          "executable": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executable"
           },
           "execution_timeout_seconds": {
             "default": 900,
@@ -4099,11 +4152,37 @@
             "title": "Priority",
             "type": "integer"
           },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/TaskResourceRequest"
+            },
+            "maxItems": 16,
+            "title": "Resources",
+            "type": "array"
+          },
           "title": {
             "maxLength": 120,
             "minLength": 1,
             "title": "Title",
             "type": "string"
+          },
+          "verification": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationRequest"
+            },
+            "maxItems": 8,
+            "title": "Verification",
+            "type": "array"
+          },
+          "write_paths": {
+            "items": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Write Paths",
+            "type": "array"
           }
         },
         "required": [
@@ -4154,6 +4233,22 @@
             ],
             "title": "Adapter"
           },
+          "args": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                "maxItems": 128,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Args"
+          },
           "assigned_actor_id": {
             "anyOf": [
               {
@@ -4165,6 +4260,19 @@
               }
             ],
             "title": "Assigned Actor Id"
+          },
+          "executable": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executable"
           },
           "execution_timeout_seconds": {
             "anyOf": [
@@ -4223,6 +4331,21 @@
             ],
             "title": "Priority"
           },
+          "resources": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TaskResourceRequest"
+                },
+                "maxItems": 16,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resources"
+          },
           "title": {
             "anyOf": [
               {
@@ -4235,6 +4358,38 @@
               }
             ],
             "title": "Title"
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/VerificationRequest"
+                },
+                "maxItems": 8,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification"
+          },
+          "write_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 128,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Paths"
           }
         },
         "required": [
@@ -4270,6 +4425,29 @@
           "total"
         ],
         "title": "TaskListResponse",
+        "type": "object"
+      },
+      "TaskResourceRequest": {
+        "additionalProperties": false,
+        "description": "An exclusive managed resource an attempt needs for its whole execution\nstage, acquired all-or-none together with an execution slot. Keys are\ncanonical and exact (no wildcards); see plan section 7.",
+        "properties": {
+          "key": {
+            "pattern": "^(port|db|service|lock):[A-Za-z0-9._:-]{1,120}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "units": {
+            "default": 1,
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Units",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "TaskResourceRequest",
         "type": "object"
       },
       "TaskState": {
@@ -4309,9 +4487,27 @@
       "TaskView": {
         "additionalProperties": false,
         "properties": {
+          "accepted_result_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Result Sha"
+          },
           "adapter": {
             "title": "Adapter",
             "type": "string"
+          },
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Args",
+            "type": "array"
           },
           "assigned_actor_id": {
             "anyOf": [
@@ -4324,6 +4520,12 @@
               }
             ],
             "title": "Assigned Actor Id"
+          },
+          "attempt_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Attempt Count",
+            "type": "integer"
           },
           "change_id": {
             "format": "uuid",
@@ -4347,6 +4549,18 @@
             ],
             "title": "Creator Actor Id"
           },
+          "current_attempt_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Attempt Id"
+          },
           "depends_on_task_ids": {
             "items": {
               "format": "uuid",
@@ -4355,6 +4569,17 @@
             "maxItems": 256,
             "title": "Depends On Task Ids",
             "type": "array"
+          },
+          "executable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executable"
           },
           "execution_timeout_seconds": {
             "minimum": 1.0,
@@ -4386,10 +4611,52 @@
             "title": "Max Attempts",
             "type": "integer"
           },
+          "next_eligible_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Eligible At"
+          },
+          "pinned_base_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinned Base Sha"
+          },
           "priority": {
             "minimum": 0.0,
             "title": "Priority",
             "type": "integer"
+          },
+          "resolves_integration_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolves Integration Id"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/TaskResourceRequest"
+            },
+            "title": "Resources",
+            "type": "array"
           },
           "revision": {
             "minimum": 1.0,
@@ -4420,6 +4687,13 @@
             "title": "Updated At",
             "type": "string"
           },
+          "verification": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationRequest"
+            },
+            "title": "Verification",
+            "type": "array"
+          },
           "waiting_reason": {
             "anyOf": [
               {
@@ -4430,6 +4704,13 @@
               }
             ],
             "title": "Waiting Reason"
+          },
+          "write_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Write Paths",
+            "type": "array"
           }
         },
         "required": [
