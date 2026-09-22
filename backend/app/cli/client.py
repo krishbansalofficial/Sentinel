@@ -502,3 +502,124 @@ class ApiClient:
         if change_id is not None:
             body["change_id"] = str(change_id)
         return self._request("POST", f"/api/v1/tools/{tool_id}/trust", json_body=body)
+
+    # -- coordination: tasks and dependency graph (Phase 1, no dispatch yet) --
+
+    def create_task(
+        self,
+        change_id: UUID,
+        *,
+        title: str,
+        instructions: str,
+        adapter: str,
+        priority: int = 0,
+        max_attempts: int = 3,
+        execution_timeout_seconds: int = 900,
+        creator_actor_id: UUID | None = None,
+        assigned_actor_id: UUID | None = None,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "title": title,
+            "instructions": instructions,
+            "adapter": adapter,
+            "priority": priority,
+            "max_attempts": max_attempts,
+            "execution_timeout_seconds": execution_timeout_seconds,
+        }
+        if creator_actor_id is not None:
+            body["creator_actor_id"] = str(creator_actor_id)
+        if assigned_actor_id is not None:
+            body["assigned_actor_id"] = str(assigned_actor_id)
+        return self._request(
+            "POST", f"/api/v1/changes/{change_id}/tasks",
+            json_body=body, idempotency_key=idempotency_key,
+        )
+
+    def list_tasks(self, change_id: UUID, *, limit: int = 100, offset: int = 0) -> Any:
+        return self._request(
+            "GET", f"/api/v1/changes/{change_id}/tasks?limit={limit}&offset={offset}"
+        )
+
+    def get_task(self, change_id: UUID, task_id: UUID) -> Any:
+        return self._request("GET", f"/api/v1/changes/{change_id}/tasks/{task_id}")
+
+    def edit_task(
+        self,
+        change_id: UUID,
+        task_id: UUID,
+        *,
+        expected_revision: int,
+        title: str | None = None,
+        instructions: str | None = None,
+        adapter: str | None = None,
+        assigned_actor_id: UUID | None = None,
+        priority: int | None = None,
+        max_attempts: int | None = None,
+        execution_timeout_seconds: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {"expected_revision": expected_revision}
+        if title is not None:
+            body["title"] = title
+        if instructions is not None:
+            body["instructions"] = instructions
+        if adapter is not None:
+            body["adapter"] = adapter
+        if assigned_actor_id is not None:
+            body["assigned_actor_id"] = str(assigned_actor_id)
+        if priority is not None:
+            body["priority"] = priority
+        if max_attempts is not None:
+            body["max_attempts"] = max_attempts
+        if execution_timeout_seconds is not None:
+            body["execution_timeout_seconds"] = execution_timeout_seconds
+        return self._request(
+            "PATCH", f"/api/v1/changes/{change_id}/tasks/{task_id}",
+            json_body=body, idempotency_key=idempotency_key,
+        )
+
+    def replace_task_dependencies(
+        self,
+        change_id: UUID,
+        task_id: UUID,
+        *,
+        expected_revision: int,
+        depends_on_task_ids: list[UUID],
+        idempotency_key: str | None = None,
+    ) -> Any:
+        return self._request(
+            "PUT", f"/api/v1/changes/{change_id}/tasks/{task_id}/dependencies",
+            json_body={
+                "expected_revision": expected_revision,
+                "depends_on_task_ids": [str(i) for i in depends_on_task_ids],
+            },
+            idempotency_key=idempotency_key,
+        )
+
+    def submit_task(
+        self, change_id: UUID, task_id: UUID, *, expected_revision: int,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        return self._request(
+            "POST", f"/api/v1/changes/{change_id}/tasks/{task_id}/submit",
+            json_body={"expected_revision": expected_revision},
+            idempotency_key=idempotency_key,
+        )
+
+    def cancel_task(
+        self,
+        change_id: UUID,
+        task_id: UUID,
+        *,
+        expected_revision: int,
+        reason: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {"expected_revision": expected_revision}
+        if reason is not None:
+            body["reason"] = reason
+        return self._request(
+            "POST", f"/api/v1/changes/{change_id}/tasks/{task_id}/cancel",
+            json_body=body, idempotency_key=idempotency_key,
+        )

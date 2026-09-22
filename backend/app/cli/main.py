@@ -36,6 +36,7 @@ assurance_app = typer.Typer(no_args_is_help=True)
 events_app = typer.Typer(no_args_is_help=True)
 replay_app = typer.Typer(no_args_is_help=True)
 tool_app = typer.Typer(no_args_is_help=True)
+task_app = typer.Typer(no_args_is_help=True)
 app.add_typer(change_app, name="change")
 app.add_typer(actor_app, name="actor")
 app.add_typer(delegation_app, name="delegation")
@@ -50,6 +51,7 @@ app.add_typer(assurance_app, name="assurance")
 app.add_typer(events_app, name="events")
 app.add_typer(replay_app, name="replay")
 app.add_typer(tool_app, name="tool")
+app.add_typer(task_app, name="task")
 
 EXIT_OK = 0
 EXIT_API_ERROR = 1
@@ -695,6 +697,156 @@ def tool_trust(
         lambda: ApiClient(api_url).decide_tool_trust(
             tool_id, actor_id=actor_id, decision=decision, scope=scope,
             reason=reason, change_id=change_id,
+        ),
+        as_json=json_, no_color=no_color,
+    )
+
+
+@task_app.command("create")
+def task_create(
+    change_id: UUID,
+    title: str,
+    instructions: str,
+    adapter: str,
+    priority: int = 0,
+    max_attempts: int = 3,
+    execution_timeout_seconds: int = 900,
+    creator_actor_id: UUID = typer.Option(None, "--creator-actor-id"),
+    assigned_actor_id: UUID = typer.Option(None, "--assigned-actor-id"),
+    idempotency_key: str = typer.Option(None, "--idempotency-key"),
+    api_url: str = ApiUrlOption,
+    json_: bool = JsonOption,
+    no_color: bool = NoColorOption,
+) -> None:
+    """Create a DRAFT task under a Change. No dispatch happens yet."""
+    _run(
+        lambda: ApiClient(api_url).create_task(
+            change_id, title=title, instructions=instructions, adapter=adapter,
+            priority=priority, max_attempts=max_attempts,
+            execution_timeout_seconds=execution_timeout_seconds,
+            creator_actor_id=creator_actor_id, assigned_actor_id=assigned_actor_id,
+            idempotency_key=idempotency_key,
+        ),
+        as_json=json_, no_color=no_color,
+    )
+
+
+@task_app.command("list")
+def task_list(
+    change_id: UUID,
+    limit: int = 100,
+    offset: int = 0,
+    api_url: str = ApiUrlOption,
+    json_: bool = JsonOption,
+    no_color: bool = NoColorOption,
+) -> None:
+    """List tasks for a Change."""
+    _run(
+        lambda: ApiClient(api_url).list_tasks(change_id, limit=limit, offset=offset),
+        as_json=json_, no_color=no_color,
+    )
+
+
+@task_app.command("show")
+def task_show(
+    change_id: UUID, task_id: UUID,
+    api_url: str = ApiUrlOption, json_: bool = JsonOption, no_color: bool = NoColorOption,
+) -> None:
+    """Show one task's detail, including dependency ids and waiting reason."""
+    _run(
+        lambda: ApiClient(api_url).get_task(change_id, task_id),
+        as_json=json_, no_color=no_color,
+    )
+
+
+@task_app.command("edit")
+def task_edit(
+    change_id: UUID,
+    task_id: UUID,
+    expected_revision: int = typer.Option(..., "--expected-revision"),
+    title: str = typer.Option(None, "--title"),
+    instructions: str = typer.Option(None, "--instructions"),
+    adapter: str = typer.Option(None, "--adapter"),
+    assigned_actor_id: UUID = typer.Option(None, "--assigned-actor-id"),
+    priority: int = typer.Option(None, "--priority"),
+    max_attempts: int = typer.Option(None, "--max-attempts"),
+    execution_timeout_seconds: int = typer.Option(None, "--execution-timeout-seconds"),
+    idempotency_key: str = typer.Option(None, "--idempotency-key"),
+    api_url: str = ApiUrlOption,
+    json_: bool = JsonOption,
+    no_color: bool = NoColorOption,
+) -> None:
+    """Edit a DRAFT task's fields. Fails once the task has been submitted."""
+    _run(
+        lambda: ApiClient(api_url).edit_task(
+            change_id, task_id, expected_revision=expected_revision, title=title,
+            instructions=instructions, adapter=adapter,
+            assigned_actor_id=assigned_actor_id, priority=priority,
+            max_attempts=max_attempts,
+            execution_timeout_seconds=execution_timeout_seconds,
+            idempotency_key=idempotency_key,
+        ),
+        as_json=json_, no_color=no_color,
+    )
+
+
+@task_app.command("dependencies")
+def task_dependencies(
+    change_id: UUID,
+    task_id: UUID,
+    expected_revision: int = typer.Option(..., "--expected-revision"),
+    depends_on: list[UUID] = typer.Option([], "--depends-on"),
+    idempotency_key: str = typer.Option(None, "--idempotency-key"),
+    api_url: str = ApiUrlOption,
+    json_: bool = JsonOption,
+    no_color: bool = NoColorOption,
+) -> None:
+    """Replace a DRAFT task's dependency edges (rejects cycles/self/cross-Change)."""
+    _run(
+        lambda: ApiClient(api_url).replace_task_dependencies(
+            change_id, task_id, expected_revision=expected_revision,
+            depends_on_task_ids=depends_on, idempotency_key=idempotency_key,
+        ),
+        as_json=json_, no_color=no_color,
+    )
+
+
+@task_app.command("submit")
+def task_submit(
+    change_id: UUID,
+    task_id: UUID,
+    expected_revision: int = typer.Option(..., "--expected-revision"),
+    idempotency_key: str = typer.Option(None, "--idempotency-key"),
+    api_url: str = ApiUrlOption,
+    json_: bool = JsonOption,
+    no_color: bool = NoColorOption,
+) -> None:
+    """Submit a DRAFT task: becomes WAITING or READY. No scheduler dispatches it yet."""
+    _run(
+        lambda: ApiClient(api_url).submit_task(
+            change_id, task_id, expected_revision=expected_revision,
+            idempotency_key=idempotency_key,
+        ),
+        as_json=json_, no_color=no_color,
+    )
+
+
+@task_app.command("cancel")
+def task_cancel(
+    change_id: UUID,
+    task_id: UUID,
+    expected_revision: int = typer.Option(..., "--expected-revision"),
+    reason: str = typer.Option(None, "--reason"),
+    idempotency_key: str = typer.Option(None, "--idempotency-key"),
+    api_url: str = ApiUrlOption,
+    json_: bool = JsonOption,
+    no_color: bool = NoColorOption,
+) -> None:
+    """Cancel a DRAFT/WAITING/READY task."""
+    _run(
+        lambda: ApiClient(api_url).cancel_task(
+            change_id, task_id, expected_revision=expected_revision, reason=reason,
+            idempotency_key=idempotency_key,
         ),
         as_json=json_, no_color=no_color,
     )
