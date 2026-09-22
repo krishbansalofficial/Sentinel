@@ -753,6 +753,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/changes/{change_id}/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tasks */
+        get: operations["list_tasks_api_v1_changes__change_id__tasks_get"];
+        put?: never;
+        /** Create Task */
+        post: operations["create_task_api_v1_changes__change_id__tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/changes/{change_id}/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Task */
+        get: operations["get_task_api_v1_changes__change_id__tasks__task_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit Task */
+        patch: operations["edit_task_api_v1_changes__change_id__tasks__task_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/changes/{change_id}/tasks/{task_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Task */
+        post: operations["cancel_task_api_v1_changes__change_id__tasks__task_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/changes/{change_id}/tasks/{task_id}/dependencies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace Task Dependencies */
+        put: operations["replace_task_dependencies_api_v1_changes__change_id__tasks__task_id__dependencies_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/changes/{change_id}/tasks/{task_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Task */
+        post: operations["submit_task_api_v1_changes__change_id__tasks__task_id__submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/changes/{change_id}/tools": {
         parameters: {
             query?: never;
@@ -2337,7 +2424,7 @@ export interface components {
          *     event types below; it is not a filesystem or tool-call trace.
          * @enum {string}
          */
-        JournalEventType: "change.created" | "change.contract_updated" | "change.transitioned" | "change.git_summary_refreshed" | "change.legacy_verification_run" | "change.deleted" | "delegation.issued" | "delegation.revoked" | "credential.grant.issued" | "credential.grant.revoked" | "credential.secret.resolved" | "git.checkpoint.captured" | "agent.launched" | "agent.attached" | "agent.stop_requested" | "agent.completed" | "agent.descendant.observed" | "agent.descendant.terminated" | "agent.process_tree.terminated" | "environment.passport.captured" | "dependency.report.captured" | "assurance.plan.created" | "assurance.check.completed" | "provider.pull_request.created" | "provider.pull_request.refreshed" | "provider.pull_request.closed" | "provider.ci_refreshed" | "outcome.recorded" | "recovery.plan.created" | "recovery.action.completed" | "recovery.plan.completed" | "passport.built" | "passport.export.signed" | "policy.decision.denied" | "tool.manifest.registered" | "tool.trust.decided" | "tool.trust.invalidated" | "agent.paused" | "agent.resumed" | "change.forked";
+        JournalEventType: "change.created" | "change.contract_updated" | "change.transitioned" | "change.git_summary_refreshed" | "change.legacy_verification_run" | "change.deleted" | "delegation.issued" | "delegation.revoked" | "credential.grant.issued" | "credential.grant.revoked" | "credential.secret.resolved" | "git.checkpoint.captured" | "agent.launched" | "agent.attached" | "agent.stop_requested" | "agent.completed" | "agent.descendant.observed" | "agent.descendant.terminated" | "agent.process_tree.terminated" | "environment.passport.captured" | "dependency.report.captured" | "assurance.plan.created" | "assurance.check.completed" | "provider.pull_request.created" | "provider.pull_request.refreshed" | "provider.pull_request.closed" | "provider.ci_refreshed" | "outcome.recorded" | "recovery.plan.created" | "recovery.action.completed" | "recovery.plan.completed" | "passport.built" | "passport.export.signed" | "policy.decision.denied" | "tool.manifest.registered" | "tool.trust.decided" | "tool.trust.invalidated" | "agent.paused" | "agent.resumed" | "change.forked" | "task.created" | "task.edited" | "task.dependencies.replaced" | "task.submitted" | "task.cancelled";
         /** Outcome */
         Outcome: {
             /**
@@ -2665,6 +2752,144 @@ export interface components {
         SigningPublicKeyResponse: {
             /** Public Key */
             public_key: string;
+        };
+        /** TaskCancelRequest */
+        TaskCancelRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** TaskCreateRequest */
+        TaskCreateRequest: {
+            /** Adapter */
+            adapter: string;
+            /** Assigned Actor Id */
+            assigned_actor_id?: string | null;
+            /** Creator Actor Id */
+            creator_actor_id?: string | null;
+            /**
+             * Execution Timeout Seconds
+             * @default 900
+             */
+            execution_timeout_seconds: number;
+            /** Instructions */
+            instructions: string;
+            /**
+             * Max Attempts
+             * @default 3
+             */
+            max_attempts: number;
+            /**
+             * Priority
+             * @default 0
+             */
+            priority: number;
+            /** Title */
+            title: string;
+        };
+        /** TaskDependenciesRequest */
+        TaskDependenciesRequest: {
+            /** Depends On Task Ids */
+            depends_on_task_ids?: string[];
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** TaskEditRequest */
+        TaskEditRequest: {
+            /** Adapter */
+            adapter?: string | null;
+            /** Assigned Actor Id */
+            assigned_actor_id?: string | null;
+            /** Execution Timeout Seconds */
+            execution_timeout_seconds?: number | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Instructions */
+            instructions?: string | null;
+            /** Max Attempts */
+            max_attempts?: number | null;
+            /** Priority */
+            priority?: number | null;
+            /** Title */
+            title?: string | null;
+        };
+        /** TaskListResponse */
+        TaskListResponse: {
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["TaskView"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * TaskState
+         * @description Full state machine from `MULTI_AGENT_IMPLEMENTATION_PLAN.md` section 4.
+         *
+         *     Phase 1 (see `MULTI_AGENT_BUILD_STATUS.md`) only reaches `DRAFT`,
+         *     `WAITING`, `READY`, and `CANCELLED` -- there is no scheduler yet to drive
+         *     a task through `ACTIVE`/`RESULT_READY`/`INTEGRATING`/`SUCCEEDED`/
+         *     `RETRY_WAIT`/`BLOCKED`/`CANCEL_REQUESTED`/`FAILED`. All members are
+         *     declared now so later phases extend the transition table instead of
+         *     making a breaking enum change.
+         * @enum {string}
+         */
+        TaskState: "DRAFT" | "WAITING" | "READY" | "ACTIVE" | "RESULT_READY" | "INTEGRATING" | "SUCCEEDED" | "RETRY_WAIT" | "BLOCKED" | "CANCEL_REQUESTED" | "CANCELLED" | "FAILED";
+        /** TaskSubmitRequest */
+        TaskSubmitRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** TaskView */
+        TaskView: {
+            /** Adapter */
+            adapter: string;
+            /** Assigned Actor Id */
+            assigned_actor_id?: string | null;
+            /**
+             * Change Id
+             * Format: uuid
+             */
+            change_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Creator Actor Id */
+            creator_actor_id?: string | null;
+            /** Depends On Task Ids */
+            depends_on_task_ids?: string[];
+            /** Execution Timeout Seconds */
+            execution_timeout_seconds: number;
+            /** Failure Reason */
+            failure_reason?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Instructions */
+            instructions: string;
+            /** Max Attempts */
+            max_attempts: number;
+            /** Priority */
+            priority: number;
+            /** Revision */
+            revision: number;
+            state: components["schemas"]["TaskState"];
+            /** Submitted At */
+            submitted_at?: string | null;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Waiting Reason */
+            waiting_reason?: string | null;
         };
         /** ToolDeclareRequest */
         ToolDeclareRequest: {
@@ -4578,6 +4803,270 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChainVerificationResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tasks_api_v1_changes__change_id__tasks_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_task_api_v1_changes__change_id__tasks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_task_api_v1_changes__change_id__tasks__task_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                change_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_task_api_v1_changes__change_id__tasks__task_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                change_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskEditRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_task_api_v1_changes__change_id__tasks__task_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                change_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskCancelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_task_dependencies_api_v1_changes__change_id__tasks__task_id__dependencies_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                change_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskDependenciesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_task_api_v1_changes__change_id__tasks__task_id__submit_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                change_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskSubmitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskView"];
                 };
             };
             /** @description Validation Error */
