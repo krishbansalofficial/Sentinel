@@ -186,6 +186,31 @@ class OutcomeStatus(StrEnum):
     UNAVAILABLE = "UNAVAILABLE"
 
 
+class TaskState(StrEnum):
+    """Full state machine from `MULTI_AGENT_IMPLEMENTATION_PLAN.md` section 4.
+
+    Phase 1 (see `MULTI_AGENT_BUILD_STATUS.md`) only reaches `DRAFT`,
+    `WAITING`, `READY`, and `CANCELLED` -- there is no scheduler yet to drive
+    a task through `ACTIVE`/`RESULT_READY`/`INTEGRATING`/`SUCCEEDED`/
+    `RETRY_WAIT`/`BLOCKED`/`CANCEL_REQUESTED`/`FAILED`. All members are
+    declared now so later phases extend the transition table instead of
+    making a breaking enum change.
+    """
+
+    DRAFT = "DRAFT"
+    WAITING = "WAITING"
+    READY = "READY"
+    ACTIVE = "ACTIVE"
+    RESULT_READY = "RESULT_READY"
+    INTEGRATING = "INTEGRATING"
+    SUCCEEDED = "SUCCEEDED"
+    RETRY_WAIT = "RETRY_WAIT"
+    BLOCKED = "BLOCKED"
+    CANCEL_REQUESTED = "CANCEL_REQUESTED"
+    CANCELLED = "CANCELLED"
+    FAILED = "FAILED"
+
+
 class RecoveryStatus(StrEnum):
     PLANNED = "PLANNED"
     APPROVED = "APPROVED"
@@ -796,6 +821,11 @@ class JournalEventType(StrEnum):
     AGENT_PAUSED = "agent.paused"
     AGENT_RESUMED = "agent.resumed"
     CHANGE_FORKED = "change.forked"
+    TASK_CREATED = "task.created"
+    TASK_EDITED = "task.edited"
+    TASK_DEPENDENCIES_REPLACED = "task.dependencies.replaced"
+    TASK_SUBMITTED = "task.submitted"
+    TASK_CANCELLED = "task.cancelled"
 
 
 class JournalEvent(ContractModel):
@@ -1120,6 +1150,76 @@ class ErrorDetail(ContractModel):
 
 class ErrorEnvelope(ContractModel):
     error: ErrorDetail
+
+
+class TaskCreateRequest(ContractModel):
+    title: TrimmedTitle
+    instructions: TrimmedIntent
+    adapter: ShortText
+    creator_actor_id: UUID | None = None
+    assigned_actor_id: UUID | None = None
+    priority: int = Field(default=0, ge=0, le=1000)
+    max_attempts: int = Field(default=3, ge=1, le=10)
+    execution_timeout_seconds: int = Field(default=900, ge=1, le=86400)
+
+
+class TaskEditRequest(ContractModel):
+    expected_revision: int = Field(ge=1)
+    title: TrimmedTitle | None = None
+    instructions: TrimmedIntent | None = None
+    adapter: ShortText | None = None
+    assigned_actor_id: UUID | None = None
+    priority: int | None = Field(default=None, ge=0, le=1000)
+    max_attempts: int | None = Field(default=None, ge=1, le=10)
+    execution_timeout_seconds: int | None = Field(default=None, ge=1, le=86400)
+
+
+class TaskDependenciesRequest(ContractModel):
+    expected_revision: int = Field(ge=1)
+    depends_on_task_ids: list[UUID] = Field(default_factory=list, max_length=256)
+
+    @field_validator("depends_on_task_ids")
+    @classmethod
+    def unique_predecessors(cls, values: list[UUID]) -> list[UUID]:
+        if len(values) != len(set(values)):
+            raise ValueError("duplicate predecessor task ids are not allowed")
+        return values
+
+
+class TaskSubmitRequest(ContractModel):
+    expected_revision: int = Field(ge=1)
+
+
+class TaskCancelRequest(ContractModel):
+    expected_revision: int = Field(ge=1)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)] | None = None
+
+
+class TaskView(ContractModel):
+    id: UUID
+    change_id: UUID
+    title: str
+    instructions: str
+    creator_actor_id: UUID | None = None
+    assigned_actor_id: UUID | None = None
+    adapter: str
+    state: TaskState
+    revision: int = Field(ge=1)
+    priority: int = Field(ge=0)
+    max_attempts: int = Field(ge=1)
+    execution_timeout_seconds: int = Field(ge=1)
+    depends_on_task_ids: list[UUID] = Field(default_factory=list, max_length=256)
+    waiting_reason: str | None = None
+    failure_reason: str | None = None
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+    submitted_at: AwareDatetime | None = None
+
+
+class TaskListResponse(ContractModel):
+    items: list[TaskView]
+    count: int = Field(ge=0)
+    total: int = Field(ge=0)
 
 
 def utc_now() -> datetime:
