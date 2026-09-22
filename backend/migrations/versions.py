@@ -593,6 +593,80 @@ def migration_010_descendant_processes(connection: sqlite3.Connection) -> None:
     )
 
 
+def migration_011_coord_tasks_and_dependencies(connection: sqlite3.Connection) -> None:
+    """Multi-agent coordination Phase 1: durable tasks and dependency graph.
+
+    See `docs/MULTI_AGENT_IMPLEMENTATION_PLAN.md` sections 4-5 and
+    `docs/MULTI_AGENT_BUILD_STATUS.md` Phase 1 decision log. `coord_tasks`
+    deliberately has no `attempt`/`dispatch` columns yet -- those belong to
+    Phase 3's `coord_attempts`/`coord_dispatch_intents` tables, added by a
+    later migration once a scheduler exists to populate them. `enqueue_seq`
+    is a per-Change monotonic counter (assigned in the same transaction as
+    the insert, mirroring the journal's own `MAX(seq)+1` pattern) used for
+    deterministic FIFO tie-breaking once a scheduler reads it; Phase 1 itself
+    does not read it.
+    """
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord_tasks (
+            id TEXT PRIMARY KEY,
+            change_id TEXT NOT NULL REFERENCES changes(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            instructions TEXT NOT NULL,
+            creator_actor_id TEXT NULL,
+            assigned_actor_id TEXT NULL,
+            adapter TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'DRAFT',
+            revision INTEGER NOT NULL DEFAULT 1,
+            priority INTEGER NOT NULL DEFAULT 0,
+            enqueue_seq INTEGER NOT NULL,
+            max_attempts INTEGER NOT NULL DEFAULT 3,
+            execution_timeout_seconds INTEGER NOT NULL DEFAULT 900,
+            waiting_reason TEXT NULL,
+            failure_reason_json TEXT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            submitted_at TEXT NULL,
+            UNIQUE (change_id, enqueue_seq)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coord_tasks_change "
+        "ON coord_tasks(change_id, created_at DESC)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coord_tasks_state "
+        "ON coord_tasks(change_id, state)"
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord_dependencies (
+            id TEXT PRIMARY KEY,
+            change_id TEXT NOT NULL REFERENCES changes(id) ON DELETE CASCADE,
+            task_id TEXT NOT NULL REFERENCES coord_tasks(id) ON DELETE CASCADE,
+            depends_on_task_id TEXT NOT NULL REFERENCES coord_tasks(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL,
+            UNIQUE (task_id, depends_on_task_id),
+            CHECK (task_id != depends_on_task_id)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coord_dependencies_task "
+        "ON coord_dependencies(task_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coord_dependencies_depends_on "
+        "ON coord_dependencies(depends_on_task_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coord_dependencies_change "
+        "ON coord_dependencies(change_id)"
+    )
+
+
 MIGRATIONS = (
     Migration(1, "legacy_change_store", migration_001_legacy_change_store),
     Migration(2, "change_runtime_core", migration_002_change_runtime_core),
@@ -604,6 +678,7 @@ MIGRATIONS = (
     Migration(8, "agent_run_pause_fields", migration_008_agent_run_pause_fields),
     Migration(9, "change_fork_columns", migration_009_change_fork_columns),
     Migration(10, "descendant_processes", migration_010_descendant_processes),
+    Migration(11, "coord_tasks_and_dependencies", migration_011_coord_tasks_and_dependencies),
 )
 
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
