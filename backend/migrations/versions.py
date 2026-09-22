@@ -667,6 +667,187 @@ def migration_011_coord_tasks_and_dependencies(connection: sqlite3.Connection) -
     )
 
 
+def migration_012_coord_execution(connection: sqlite3.Connection) -> None:
+    """Multi-agent coordination Phases 2-5: attempts, workspaces, resources,
+    dispatch intents, scheduler ownership, and integrations.
+
+    See `docs/MULTI_AGENT_IMPLEMENTATION_PLAN.md` sections 4-10. Attempts are a
+    separate identity from tasks (retries keep history) and from AgentRuns
+    (`run_id` links to the existing observation). A partial unique index
+    enforces "at most one live attempt per task" in the database itself, so a
+    racing claimant cannot create a second one even if service code is wrong.
+    """
+
+    for name, definition in (
+        ("executable", "TEXT NULL"),
+        ("args_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("write_paths_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("verification_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("resources_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("current_attempt_id", "TEXT NULL"),
+        ("attempt_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("next_eligible_at", "TEXT NULL"),
+        ("pinned_base_sha", "TEXT NULL"),
+        ("accepted_result_sha", "TEXT NULL"),
+        ("resolves_integration_id", "TEXT NULL"),
+    ):
+        _add_column(connection, "coord_tasks", name, definition)
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord_attempts (
+            id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL REFERENCES coord_tasks(id) ON DELETE CASCADE,
+            change_id TEXT NOT NULL REFERENCES changes(id) ON DELETE CASCADE,
+            attempt_number INTEGER NOT NULL,
+            state TEXT NOT NULL,
+            live INTEGER NOT NULL DEFAULT 1,
+            scheduler_epoch INTEGER NOT NULL,
+            generation INTEGER NOT NULL,
+            run_id TEXT NULL,
+            workspace_id TEXT NULL,
+            base_sha TEXT NULL,
+            result_sha TEXT NULL,
+            result_json TEXT NULL,
+            lease_expires_at TEXT NOT NULL,
+            last_heartbeat_at TEXT NULL,
+            execution_deadline TEXT NULL,
+            cancel_requested_at TEXT NULL,
+            started_at TEXT NULL,
+            ended_at TEXT NULL,
+            failure_code TEXT NULL,
+            failure_detail TEXT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (task_id, attempt_number)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_coord_attempts_one_live "
+        "ON coord_attempts(task_id) WHERE live = 1"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coord_attempts_state "
+        "ON coord_attempts(state, lease_expires_at)"
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord_workspaces (
+            id TEXT PRIMARY KEY,
+            attempt_id TEXT NULL,
+            change_id TEXT NOT NULL REFERENCES changes(id) ON DELETE CASCADE,
+            purpose TEXT NOT NULL,
+            repository_identity TEXT NOT NULL,
+            repository_root TEXT NOT NULL,
+            path TEXT NOT NULL UNIQUE,
+            branch TEXT NULL,
+            base_sha TEXT NOT NULL,
+            result_sha TEXT NULL,
+            state TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord_resources (
+            key TEXT PRIMARY KEY,
+            capacity INTEGER NOT NULL CHECK (capacity >= 0),
+            next_generation INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord_resource_leases (
+            id TEXT PRIMARY KEY,
+            resource_key TEXT NOT NULL REFERENCES coord_resources(key),
+            owner_kind TEXT NOT NULL,
+            owner_id TEXT NOT NULL,
+            units INTEGER NOT NULL CHECK (units >= 1),
+            generation INTEGER NOT NULL,
+            scheduler_epoch INTEGER NOT NULL,
+            state TEXT NOT NULL,
+            reason TEXT NULL,
+            created_at TEXT NOT NULL,
+            released_at TEXT NULL,
+            UNIQUE (resource_key, owner_kind, owner_id)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coord_leases_resource_state "
+        "ON coord_resource_leases(resource_key, state)"
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord_dispatch_intents (
+            id TEXT PRIMARY KEY,
+            attempt_id TEXT NOT NULL UNIQUE REFERENCES coord_attempts(id) ON DELETE CASCADE,
+            fingerprint TEXT NOT NULL,
+            state TEXT NOT NULL,
+            run_id TEXT NULL,
+            pid INTEGER NULL,
+            process_created_at TEXT NULL,
+            detail TEXT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord_scheduler_owner (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            owner_id TEXT NOT NULL,
+            epoch INTEGER NOT NULL,
+            acquired_at TEXT NOT NULL,
+            renewed_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord_change_settings (
+            change_id TEXT PRIMARY KEY REFERENCES changes(id) ON DELETE CASCADE,
+            dispatch_paused INTEGER NOT NULL DEFAULT 0,
+            integration_ref TEXT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord_integrations (
+            id TEXT PRIMARY KEY,
+            change_id TEXT NOT NULL REFERENCES changes(id) ON DELETE CASCADE,
+            task_id TEXT NOT NULL REFERENCES coord_tasks(id) ON DELETE CASCADE,
+            attempt_id TEXT NOT NULL REFERENCES coord_attempts(id) ON DELETE CASCADE,
+            target_ref TEXT NOT NULL,
+            source_sha TEXT NOT NULL,
+            expected_target_sha TEXT NULL,
+            candidate_sha TEXT NULL,
+            state TEXT NOT NULL,
+            generation INTEGER NOT NULL DEFAULT 1,
+            build_count INTEGER NOT NULL DEFAULT 0,
+            checks_json TEXT NULL,
+            conflict_json TEXT NULL,
+            detail TEXT NULL,
+            resolved_by_task_id TEXT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coord_integrations_state "
+        "ON coord_integrations(state, created_at)"
+    )
+
+
 MIGRATIONS = (
     Migration(1, "legacy_change_store", migration_001_legacy_change_store),
     Migration(2, "change_runtime_core", migration_002_change_runtime_core),
@@ -679,6 +860,7 @@ MIGRATIONS = (
     Migration(9, "change_fork_columns", migration_009_change_fork_columns),
     Migration(10, "descendant_processes", migration_010_descendant_processes),
     Migration(11, "coord_tasks_and_dependencies", migration_011_coord_tasks_and_dependencies),
+    Migration(12, "coord_execution", migration_012_coord_execution),
 )
 
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version

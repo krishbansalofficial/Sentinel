@@ -13,6 +13,7 @@ from backend.app.coordination.repository import TaskRepository
 from backend.app.core.database import Database
 from backend.app.core.errors import AppError
 from backend.app.core.journal import JournalWriter
+from backend.migrations import LATEST_SCHEMA_VERSION
 from backend.migrations.versions import MIGRATIONS
 
 
@@ -84,7 +85,7 @@ def test_migration_from_existing_database(tmp_path) -> None:
 
     database = Database(path)
     database.initialize()
-    assert database.schema_version() == 11
+    assert database.schema_version() == LATEST_SCHEMA_VERSION
 
     with database.connection() as connection:
         tables = {
