@@ -61,6 +61,13 @@ from backend.app.contracts.models import (
     RepositoryPathRequest,
     SignedPassportExport,
     SigningPublicKeyResponse,
+    TaskCancelRequest,
+    TaskCreateRequest,
+    TaskDependenciesRequest,
+    TaskEditRequest,
+    TaskListResponse,
+    TaskSubmitRequest,
+    TaskView,
     ToolManifest,
     ToolManifestListResponse,
     ToolTrustDecision,
@@ -748,5 +755,103 @@ def build_router(service: ChangeService, runtime: RuntimeServices) -> APIRouter:
     def declare_tool_manifest(change_id: UUID, request: ToolDeclareRequest) -> ToolManifest:
         service.get(change_id)
         return runtime.tools.declare_manifest(change_id, request.manifest_path)
+
+    # -- Multi-agent coordination: tasks and dependency graph (Phase 1;   ---
+    # see docs/MULTI_AGENT_IMPLEMENTATION_PLAN.md, no dispatch yet) ---------
+
+    @router.post(
+        "/changes/{change_id}/tasks",
+        response_model=TaskView,
+        status_code=status.HTTP_201_CREATED,
+        tags=["coordination"],
+    )
+    def create_task(
+        change_id: UUID,
+        request: TaskCreateRequest,
+        idempotency_key: IdempotencyHeader = None,
+    ) -> TaskView:
+        return runtime.coordination.create(
+            change_id, request, idempotency_key=idempotency_key
+        )
+
+    @router.get(
+        "/changes/{change_id}/tasks",
+        response_model=TaskListResponse,
+        tags=["coordination"],
+    )
+    def list_tasks(
+        change_id: UUID,
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> TaskListResponse:
+        return runtime.coordination.list(change_id, limit=limit, offset=offset)
+
+    @router.get(
+        "/changes/{change_id}/tasks/{task_id}",
+        response_model=TaskView,
+        tags=["coordination"],
+    )
+    def get_task(change_id: UUID, task_id: UUID) -> TaskView:
+        return runtime.coordination.get(change_id, task_id)
+
+    @router.patch(
+        "/changes/{change_id}/tasks/{task_id}",
+        response_model=TaskView,
+        tags=["coordination"],
+    )
+    def edit_task(
+        change_id: UUID,
+        task_id: UUID,
+        request: TaskEditRequest,
+        idempotency_key: IdempotencyHeader = None,
+    ) -> TaskView:
+        return runtime.coordination.edit(
+            change_id, task_id, request, idempotency_key=idempotency_key
+        )
+
+    @router.put(
+        "/changes/{change_id}/tasks/{task_id}/dependencies",
+        response_model=TaskView,
+        tags=["coordination"],
+    )
+    def replace_task_dependencies(
+        change_id: UUID,
+        task_id: UUID,
+        request: TaskDependenciesRequest,
+        idempotency_key: IdempotencyHeader = None,
+    ) -> TaskView:
+        return runtime.coordination.replace_dependencies(
+            change_id, task_id, request, idempotency_key=idempotency_key
+        )
+
+    @router.post(
+        "/changes/{change_id}/tasks/{task_id}/submit",
+        response_model=TaskView,
+        tags=["coordination"],
+    )
+    def submit_task(
+        change_id: UUID,
+        task_id: UUID,
+        request: TaskSubmitRequest,
+        idempotency_key: IdempotencyHeader = None,
+    ) -> TaskView:
+        return runtime.coordination.submit(
+            change_id, task_id, request, idempotency_key=idempotency_key
+        )
+
+    @router.post(
+        "/changes/{change_id}/tasks/{task_id}/cancel",
+        response_model=TaskView,
+        tags=["coordination"],
+    )
+    def cancel_task(
+        change_id: UUID,
+        task_id: UUID,
+        request: TaskCancelRequest,
+        idempotency_key: IdempotencyHeader = None,
+    ) -> TaskView:
+        return runtime.coordination.cancel(
+            change_id, task_id, request, idempotency_key=idempotency_key
+        )
 
     return router

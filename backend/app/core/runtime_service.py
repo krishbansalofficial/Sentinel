@@ -45,6 +45,7 @@ from backend.app.contracts.ports import (
     RecoveryPort,
 )
 from backend.app.core.change_service import ChangeService
+from backend.app.coordination.service import CoordinationService
 from backend.app.core.errors import (
     grant_binding_invalid,
     idempotency_conflict,
@@ -719,3 +720,4 @@ class RuntimeServices:
     evidence: EvidenceAdminService
     replay: ReplayService
     tools: ToolRegistryService
+    coordination: CoordinationService

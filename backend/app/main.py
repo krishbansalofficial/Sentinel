@@ -35,6 +35,8 @@ from backend.app.core.lifecycle_facts_service import RuntimeLifecycleFacts
 from backend.app.core.replay_service import ReplayService
 from backend.app.core.router import build_router
 from backend.app.core.tool_registry_service import ToolRegistryService
+from backend.app.coordination.repository import TaskRepository
+from backend.app.coordination.service import CoordinationService
 from backend.app.core.runtime_repositories import (
     CredentialGrantRepository,
     OutcomeRepository,
@@ -103,6 +105,7 @@ _DEFAULT_CONFIGURED_CAPABILITIES = {
     "event_journal",
     "replay",
     "tool_registry",
+    "task_coordination",
 }
 
 
@@ -306,6 +309,11 @@ def _build_runtime_services(
     passport = PassportService(passport_builder, service, PassportRepository(database),
                                journal=resolved_journal, signing=signing)
 
+    coordination = CoordinationService(
+        TaskRepository(database, journal=resolved_journal),
+        require_change=service.get,
+    )
+
     return RuntimeServices(
         identity=identity,
         credentials=credentials,
@@ -318,6 +326,7 @@ def _build_runtime_services(
         ),
         replay=replay_service,
         tools=resolved_tools,
+        coordination=coordination,
     )
 
 

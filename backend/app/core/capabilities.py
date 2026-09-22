@@ -32,6 +32,7 @@ _RETAINED = {
     "event_journal": "Per-Change hash-chained mutation record covering entities this backend already models.",
     "replay": "Trace-only reconstruction and cryptographic verification of a Change's causal timeline; no re-execution.",
     "tool_registry": "Top-level launched executable and declared-manifest trust lifecycle with Windows-Authenticode signature checks.",
+    "task_coordination": "Durable multi-agent tasks and dependency graph; no scheduler/dispatch yet (Phase 1 of the coordination plan).",
 }
 
 
