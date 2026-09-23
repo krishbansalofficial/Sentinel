@@ -39,6 +39,13 @@ class StoredTask:
     failure_reason: str | None = None
     submitted_at: datetime | None = None
     depends_on_task_ids: tuple[UUID, ...] = field(default_factory=tuple)
+    # Execution definition (Phase 3 dispatch reads these). `verification` and
+    # `resources` hold the JSON form of their contract models.
+    executable: str | None = None
+    args: tuple[str, ...] = ()
+    write_paths: tuple[str, ...] = ()
+    verification: tuple[dict[str, Any], ...] = ()
+    resources: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

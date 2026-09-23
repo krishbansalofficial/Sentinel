@@ -33,7 +33,8 @@ all docs, then commit and push to this branch (never `master`).
   passing, committed and pushed**. No frontend slice yet (see "Frontend
   status" below — this is a known, explicitly tracked gap, not an oversight).
 - Phase 2 (isolated workspaces and immutable results): **done**, tests
-  passing (63 in the two workspace suites). `WorkspaceManager` does the Git
+  passing (110 coordination-focused tests, including 70 workspace tests and
+  3 mock-data scenarios). A second review pass found and fixed 8 bugs. `WorkspaceManager` does the Git
   work. `WorkspaceRegistry` adds durable records, explicit retention states,
   journaled transitions, crash reconciliation, and result pinning. It is wired
   into `RuntimeServices.workspaces` but no dispatcher calls it yet; that is
@@ -47,12 +48,9 @@ all docs, then commit and push to this branch (never `master`).
 ## Next concrete action
 
 Wait for the user's go-ahead (session rule above). Then continue at
-continuation step 3 (Phase 3 scheduler). The first Phase 3 item is to persist
-the task execution fields (`executable`, `args`, `write_paths`,
-`verification`, `resources`). They are already in `TaskCreateRequest` /
-`TaskEditRequest` / `TaskView` and in `openapi.json`, but the repository
-and service do not store them yet, so the API currently **accepts and drops
-them**. Fix this before any frontend relies on them.
+continuation step 3 (Phase 3 scheduler: resources, attempts, dispatch).
+The task execution fields are now persisted (see "Phase 2 — second review
+pass"), so the scheduler can read them straight from `StoredTask`.
 
 ## Phase 0 — decision log
 
@@ -572,6 +570,98 @@ yet (see "Next concrete action").
 Full regression after Phase 2 (`python -m pytest backend/tests`, run from
 the repository root): **875 passed, 5 skipped, 0 failed** (9m14s). The skips
 are pre-existing platform skips.
+
+### Phase 2 — second review pass (bugs found and fixed)
+
+A scratch probe ran each edge case against real Git, and every bug below was
+reproduced before it was fixed.
+
+1. **A staged rename deleted a tracked secret.** After
+   `git mv service.key notes.txt`, the working-tree status showed only the
+   new path, so `service.key` was committed as deleted and went unreported.
+   Capture now stages first, then reads `diff --cached -M`, which gives both
+   sides of a rename. Any sensitive old or new path is restored to HEAD and
+   reported.
+2. **`git rm --cached` by an agent crashed capture.** This applied to any
+   file still on disk, not just secrets. The shared strict status parser
+   rejected the staged-delete-plus-untracked state as "duplicate status
+   paths", producing a generic 500. Capture no longer uses that parser.
+3. **A repository the agent created or cloned inside its workspace crashed
+   capture.** Git lists it as `dir/`, which the path normalizer rejected.
+   Staging it would also produce a gitlink, which the hardened runner
+   refuses, and one without commits makes `git add` itself fail. Embedded
+   repositories are now detected via `ls-files --others` and left out of
+   `add` with `:(exclude,literal)` pathspecs. They are reported as
+   `excluded_embedded` and never committed.
+4. **Agent-chosen names were used as glob pathspecs.** A directory named
+   `[ab]` would also match the file `a`. Exclusion and unstaging now use
+   literal pathspecs.
+5. **`sensitive_committed` missed secrets the agent's own commits deleted or
+   renamed away.** It now checks the old path as well as the new one.
+6. **Task execution fields were accepted by the API and silently dropped**
+   (`executable`, `args`, `write_paths`, `verification`, `resources`). They
+   are now persisted end to end: create, edit, read, list, and idempotency
+   replay. Replay records written before this change still load, with the
+   fields empty.
+7. **An edit that named no fields still wrote a `task.edited` journal
+   event.** It no longer does.
+8. **Parallel captures raced on the shared object database (flaky, Windows).**
+   Worktrees share `.git/objects`. Two captures writing an identical blob
+   at the same moment intermittently failed with
+   `unable to write file .git/objects/..: Permission denied`.
+   - Found by looping the concurrency tests: 1 failure in 25 runs.
+   - Reproduced with a spy on the Git runner, which showed the failing
+     `git add` and its stderr.
+   - Fix: capture and merge now hold a per-repository lock, keyed by the
+     canonical common Git directory and shared by every `WorkspaceManager`
+     in the process.
+   - A new identical-content stress test fails 4 of 5 runs without the lock
+     and passes 5 of 5 with it.
+   - Residual risk: a Git process outside Sentinel writing the same object
+     at the same instant is not covered by this lock.
+
+Not fixed, recorded instead: on Windows, a case-only rename
+(`App.py` → `app.py`) is invisible to Git because of `core.ignorecase`, so
+it is not part of the result. Also, a sensitive file an agent renames to a
+non-sensitive name keeps its content under the new name; name-based
+exclusion cannot see content.
+
+New tests:
+
+- `test_workspaces.py`: +6 regression tests.
+- `test_repository.py`: +3 (execution-field persistence and replay, replay
+  of a pre-change idempotency record, empty edit).
+- `test_coordination_routes.py`: +2 (HTTP round trip of the execution fields
+  through create, get, and patch; duplicate resource keys rejected).
+- `test_mock_data.py`: 3 seeded mock-data scenarios:
+  - A generated project of about 115 files (packages, tests, docs, binary
+    assets, CRLF script, unicode name, ignore rules). Five mock agents run
+    in parallel as real subprocesses. They modify, add, delete, rename,
+    write binaries, commit part of their work, leave ignored junk, and drop
+    a `.env`, and all of them edit one shared file. Results are captured
+    concurrently and compared byte for byte against an independent model.
+    Afterwards the user's dirty checkout is intact and every result survives
+    removal plus `gc`.
+  - 300 seeded workspace rows across 10 Changes in every state, reconciled
+    in one pass. Every expected transition and per-Change journal count is
+    checked, the journal chains verify, orphans are kept, and a second pass
+    is a no-op.
+  - 40 HTTP tasks with random execution fields, idempotent replays,
+    dependency chains, a refused cycle, paginated listing checked field by
+    field, and submission yielding `READY`/`WAITING` from the dependencies.
+
+Mutation check: each of the 7 new fixes was reverted one at a time, and all
+7 were caught. The 9 original mutations were all still caught.
+
+Verification after the second pass:
+
+- Full backend suite: **890 passed, 5 skipped, 0 failed** (875 before, plus
+  15 new tests).
+- Coordination-focused suites: 110 tests.
+- Concurrency tests looped 15× after the fix: 0 failures (1 in 25 before).
+- Mock-data suite run 3×: all passed.
+- Desktop: `api:check`, `typecheck`, and `npm test` (98/98) all passed.
+- No contract change in this pass, so `openapi.json` is unchanged.
 
 ### Phase 2 — limitations
 

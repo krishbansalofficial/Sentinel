@@ -679,3 +679,157 @@ def test_randomized_edits_capture_exactly_what_each_workspace_changed(
     assert git(repo, "rev-parse", "HEAD") == base
     assert git(repo, "branch", "--show-current") == "main"
     assert git(repo, "status", "--porcelain") == "?? user_dirty.txt"
+
+
+# -- regressions found by the second review pass --------------------------------------
+
+
+def _with_tracked_key(repo: Path) -> str:
+    (repo / "service.key").write_text("original\n", encoding="utf-8")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "tracked key")
+    return git(repo, "rev-parse", "HEAD")
+
+
+def test_staged_rename_of_tracked_secret_never_deletes_it(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    """`git mv service.key notes.txt` is a staged rename; the working-tree
+    status only showed the new name, so the secret used to be committed as
+    deleted. The old path must be restored and reported."""
+
+    base = _with_tracked_key(repo)
+    path = manager.create(str(repo), "mv-key", base, "sentinel/attempt/mv-key")
+    git(path, "mv", "service.key", "notes.txt")
+
+    result = manager.capture(path, base_sha=base, write_paths=[], message="mv")
+
+    assert result.excluded_sensitive == ["service.key"]
+    assert git(repo, "show", f"{result.result_sha}:service.key") == "original"
+    assert [(f.path, f.status) for f in result.files] == [("notes.txt", "added")]
+
+
+def test_agent_rm_cached_does_not_break_capture(repo: Path, manager: WorkspaceManager) -> None:
+    """`git rm --cached` of a file still on disk left a staged deletion plus
+    an untracked entry for one path; the strict status parser rejected that
+    as duplicate paths and capture failed outright."""
+
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "rm-cached", base, "sentinel/attempt/rm-cached")
+    git(path, "rm", "-q", "--cached", "app.py")
+    (path / "extra.txt").write_text("e\n", encoding="utf-8")
+
+    result = manager.capture(path, base_sha=base, write_paths=[], message="rm")
+
+    # The file is still on disk, so `add -A` keeps it tracked and unchanged.
+    assert [(f.path, f.status) for f in result.files] == [("extra.txt", "added")]
+    assert git(repo, "show", f"{result.result_sha}:app.py").startswith("def value")
+
+
+def test_embedded_repository_is_excluded_and_reported(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    """An agent that clones or inits a repository inside its workspace used
+    to crash capture (the hardened runner refuses gitlinks)."""
+
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "nested", base, "sentinel/attempt/nested")
+    vendor = path / "vendor" / "lib"
+    vendor.mkdir(parents=True)
+    git(vendor, "init", "-q", "-b", "main")
+    (vendor / "code.py").write_text("x = 1\n", encoding="utf-8")
+    git(vendor, "add", "-A")
+    git(vendor, "commit", "-q", "-m", "nested")
+    (path / "real.txt").write_text("real\n", encoding="utf-8")
+
+    result = manager.capture(path, base_sha=base, write_paths=[], message="nested")
+
+    assert result.excluded_embedded == ["vendor/lib"]
+    assert [f.path for f in result.files] == ["real.txt"]
+    assert "vendor" not in git(repo, "ls-tree", "-r", "--name-only", result.result_sha)
+    assert result.to_manifest()["excluded_embedded"] == ["vendor/lib"]
+
+
+def test_embedded_repository_alone_is_an_explicit_no_change(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "nested-only", base, "sentinel/attempt/nested-only")
+    (path / "sub").mkdir()
+    git(path / "sub", "init", "-q")
+    (path / "sub" / "f.txt").write_text("f\n", encoding="utf-8")
+
+    result = manager.capture(path, base_sha=base, write_paths=[], message="n")
+
+    assert result.no_change is True
+    assert result.excluded_embedded == ["sub"]
+
+
+def test_unstaging_uses_literal_pathspecs(repo: Path, manager: WorkspaceManager) -> None:
+    """An excluded name is agent-chosen. As a glob, a directory called `[ab]`
+    would also match (and silently unstage) the ordinary file `a`."""
+
+    base = git(repo, "rev-parse", "HEAD")
+    path = manager.create(str(repo), "glob", base, "sentinel/attempt/glob")
+    (path / "[ab]").mkdir()
+    git(path / "[ab]", "init", "-q")
+    (path / "[ab]" / "f.txt").write_text("f\n", encoding="utf-8")
+    (path / "a").write_text("ordinary file\n", encoding="utf-8")
+
+    result = manager.capture(path, base_sha=base, write_paths=[], message="glob")
+
+    assert result.excluded_embedded == ["[ab]"]
+    assert [f.path for f in result.files] == ["a"]
+
+
+def test_agent_commit_deleting_or_renaming_a_secret_is_reported(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    base = _with_tracked_key(repo)
+    path = manager.create(str(repo), "del-key", base, "sentinel/attempt/del-key")
+    git(path, "mv", "service.key", "renamed.txt")
+    git(path, "commit", "-q", "--no-verify", "-m", "agent renamed the key away")
+
+    result = manager.capture(path, base_sha=base, write_paths=[], message="c")
+
+    assert result.sensitive_committed == ["service.key"]
+
+
+def test_parallel_captures_of_identical_content_do_not_race_on_objects(
+    repo: Path, manager: WorkspaceManager
+) -> None:
+    """Regression: worktrees share one object database. Parallel captures
+    writing identical blobs used to fail intermittently on Windows with
+    "unable to write file .git/objects/...: Permission denied"."""
+
+    import threading
+
+    base = git(repo, "rev-parse", "HEAD")
+    for round_index in range(4):
+        paths = [manager.create(str(repo), f"same-{round_index}-{i}", base,
+                                f"sentinel/attempt/same-{round_index}-{i}") for i in range(4)]
+        for path in paths:
+            for name in range(25):
+                (path / f"gen_{name}.txt").write_text(f"shared {round_index} {name}\n",
+                                                      encoding="utf-8")
+        barrier = threading.Barrier(len(paths))
+        errors: list[BaseException] = []
+        results: list[object] = []
+
+        def work(path: Path) -> None:
+            try:
+                barrier.wait(timeout=30)
+                results.append(manager.capture(path, base_sha=base, write_paths=[],
+                                               message="same"))
+            except BaseException as exc:  # surfaced below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=work, args=(path,)) for path in paths]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=120)
+        assert errors == [], round_index
+        # Identical trees from identical parents at distinct commits.
+        trees = {git(repo, "rev-parse", f"{r.result_sha}^{{tree}}") for r in results}
+        assert len(trees) == 1 and len(results) == 4

@@ -76,6 +76,12 @@ class CoordinationService:
                 priority=request.priority,
                 max_attempts=request.max_attempts,
                 execution_timeout_seconds=request.execution_timeout_seconds,
+                executable=request.executable,
+                args=tuple(request.args),
+                write_paths=tuple(request.write_paths),
+                verification=tuple(item.model_dump(mode="json")
+                                   for item in request.verification),
+                resources=tuple(item.model_dump(mode="json") for item in request.resources),
             ),
             idempotency_key=idempotency_key,
             request_hash=self._request_hash(request),
@@ -123,6 +129,18 @@ class CoordinationService:
             fields["max_attempts"] = request.max_attempts
         if request.execution_timeout_seconds is not None:
             fields["execution_timeout_seconds"] = request.execution_timeout_seconds
+        if request.executable is not None:
+            fields["executable"] = request.executable
+        if request.args is not None:
+            fields["args_json"] = json.dumps(request.args)
+        if request.write_paths is not None:
+            fields["write_paths_json"] = json.dumps(request.write_paths)
+        if request.verification is not None:
+            fields["verification_json"] = json.dumps(
+                [item.model_dump(mode="json") for item in request.verification])
+        if request.resources is not None:
+            fields["resources_json"] = json.dumps(
+                [item.model_dump(mode="json") for item in request.resources])
         updated = self.repository.edit(
             task_id,
             request.expected_revision,
@@ -242,4 +260,9 @@ class CoordinationService:
             created_at=stored.created_at,
             updated_at=stored.updated_at,
             submitted_at=stored.submitted_at,
+            executable=stored.executable,
+            args=list(stored.args),
+            write_paths=list(stored.write_paths),
+            verification=list(stored.verification),
+            resources=list(stored.resources),
         )

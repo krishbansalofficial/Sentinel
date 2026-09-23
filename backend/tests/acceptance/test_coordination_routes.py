@@ -168,3 +168,49 @@ def test_idempotency_key_replay_over_http(tmp_path) -> None:
 
         listed = client.get(f"/api/v1/changes/{change_id}/tasks")
         assert listed.json()["count"] == 1
+
+
+def test_task_execution_fields_round_trip_over_http(tmp_path) -> None:
+    """Regression: these fields were accepted by the API and silently dropped."""
+
+    body = {
+        "title": "Run the agent",
+        "instructions": "Fix the parser",
+        "adapter": "claude",
+        "executable": "python",
+        "args": ["-m", "agent", "{instructions_file}"],
+        "write_paths": ["src/**", "tests/**"],
+        "verification": [{"executable": "pytest", "args": ["-q"], "timeout_seconds": 90}],
+        "resources": [{"key": "port:5432", "units": 1}],
+    }
+    with build_client(tmp_path) as client:
+        change_id = _create_change(client)
+        created = client.post(f"/api/v1/changes/{change_id}/tasks", json=body)
+        assert created.status_code == 201, created.text
+        task = created.json()
+        for key in ("executable", "args", "write_paths", "verification", "resources"):
+            assert task[key] == body[key], key
+
+        fetched = client.get(f"/api/v1/changes/{change_id}/tasks/{task['id']}").json()
+        assert fetched["args"] == body["args"]
+
+        edited = client.patch(
+            f"/api/v1/changes/{change_id}/tasks/{task['id']}",
+            json={"expected_revision": 1, "args": [], "write_paths": ["docs/**"],
+                  "resources": []},
+        )
+        assert edited.status_code == 200, edited.text
+        after = edited.json()
+        assert after["args"] == [] and after["write_paths"] == ["docs/**"]
+        assert after["resources"] == [] and after["executable"] == "python"
+        assert after["verification"] == body["verification"]
+
+
+def test_duplicate_resource_keys_are_rejected(tmp_path) -> None:
+    with build_client(tmp_path) as client:
+        change_id = _create_change(client)
+        response = client.post(f"/api/v1/changes/{change_id}/tasks", json={
+            "title": "t", "instructions": "i", "adapter": "claude",
+            "resources": [{"key": "port:1"}, {"key": "port:1"}],
+        })
+        assert response.status_code == 422

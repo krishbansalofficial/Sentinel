@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -81,6 +82,7 @@ class CaptureResult:
     excluded_sensitive: list[str] = field(default_factory=list)
     conflict_markers: list[str] = field(default_factory=list)
     sensitive_committed: list[str] = field(default_factory=list)
+    excluded_embedded: list[str] = field(default_factory=list)
 
     def to_manifest(self) -> dict[str, object]:
         """JSON-safe manifest stored with the workspace record."""
@@ -97,10 +99,16 @@ class CaptureResult:
             "excluded_sensitive": list(self.excluded_sensitive),
             "conflict_markers": list(self.conflict_markers),
             "sensitive_committed": list(self.sensitive_committed),
+            "excluded_embedded": list(self.excluded_embedded),
         }
 
 
 class WorkspaceManager:
+    # Shared by every manager in the process: the object database belongs to
+    # the repository, not to one manager instance.
+    _locks_guard = threading.Lock()
+    _object_locks: dict[str, threading.Lock] = {}
+
     def __init__(self, managed_root: str | Path) -> None:
         root = Path(managed_root).expanduser()
         root.mkdir(parents=True, exist_ok=True)
@@ -206,6 +214,10 @@ class WorkspaceManager:
         detect conflicts call `abort_merge` afterwards."""
 
         self._require_worktree(path)
+        with self._object_lock(path):
+            return self._merge_locked(path, source_sha, message)
+
+    def _merge_locked(self, path: Path, source_sha: str, message: str) -> list[str]:
         try:
             self._git(str(path), [*self._identity_args(), "merge", "--no-ff", "--no-edit",
                                   "-m", message, "--end-of-options", source_sha])
@@ -266,22 +278,41 @@ class WorkspaceManager:
         """
 
         self._require_worktree(path)
+        with self._object_lock(path):
+            return self._capture_locked(path, base_sha=base_sha, write_paths=write_paths,
+                                        message=message, max_files=max_files)
+
+    def _capture_locked(self, path: Path, *, base_sha: str, write_paths: list[str],
+                        message: str, max_files: int) -> CaptureResult:
         head = self.head(path)
         if not self.is_ancestor(str(path), base_sha, head):
             raise workspace_error("WORKSPACE_BASE_DIVERGED",
                                   "The workspace HEAD no longer descends from its pinned base.",
                                   base_sha=base_sha, head_sha=head)
         worktree = str(path)
-        inspector = GitRepositoryInspector
-        status = inspector._parse_status(self._git(worktree, [
-            "status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignore-submodules=none",
-        ]))
-        excluded = sorted({item.path for item in status if matches_any(item.path, SENSITIVE_PATTERNS)})
-        self._git(worktree, ["add", "-A", "--", "."])
+        # Repositories an agent created or cloned inside its workspace would
+        # be staged as gitlinks, which the hardened runner refuses to inspect.
+        # They are left out of the result and reported.
+        # They are excluded from `add` itself: one without a commit makes
+        # `git add` fail outright, so unstaging afterwards is too late.
+        embedded = self._embedded_repositories(worktree)
+        self._git(worktree, ["add", "-A", "--", ".",
+                             *(f":(exclude,literal){name}" for name in embedded)])
+        # Read what is staged (with rename detection) rather than the working
+        # tree status: this sees both sides of an agent's `git mv`, and it
+        # tolerates index states such as `git rm --cached` of a file that is
+        # still on disk.
+        excluded = sorted({
+            name
+            for change in self._name_status(worktree, ["--cached", "HEAD"])
+            for name in (change.path, change.old_path)
+            if name and matches_any(name, SENSITIVE_PATTERNS)
+        })
         if excluded:
             # Restore the index entry to HEAD: an untracked secret leaves the
-            # index, a tracked one keeps its committed content (never a deletion).
-            self._git(worktree, ["reset", "-q", "HEAD", "--", *excluded])
+            # index, a tracked one keeps its committed content (never a
+            # deletion, even when the agent renamed it away).
+            self._unstage(worktree, excluded)
         merging = self._merge_in_progress(path)
         staged = {item for item in self._git(
             worktree, ["diff", "--cached", "--name-only", "-z", "HEAD", "--"]).split("\0") if item}
@@ -303,7 +334,7 @@ class WorkspaceManager:
         # staged": an agent that committed its own edits still has a result.
         if result_sha == base_sha:
             return CaptureResult(base_sha=base_sha, result_sha=result_sha, no_change=True,
-                                 excluded_sensitive=excluded)
+                                 excluded_sensitive=excluded, excluded_embedded=embedded)
         files = self._diff_files(worktree, base_sha, result_sha)
         violations = (
             [f.path for f in files if not matches_any(f.path, write_paths)]
@@ -313,17 +344,19 @@ class WorkspaceManager:
             f.path for f in files
             if f.status != "deleted" and not f.binary and self._has_markers(path / f.path)
         ]
-        # Exclusion only covers the working tree. A sensitive file that reached
-        # the result through the agent's own commits cannot be silently
-        # dropped without rewriting its history, so it is reported instead.
-        sensitive_committed = [
-            f.path for f in files
-            if f.status != "deleted" and matches_any(f.path, SENSITIVE_PATTERNS)
-        ]
+        # Exclusion only covers uncommitted work. A sensitive file that the
+        # agent's own commits added, changed, deleted, or renamed away cannot
+        # be undone without rewriting its history, so it is reported instead.
+        sensitive_committed = sorted({
+            name
+            for f in files
+            for name in (f.path, f.old_path)
+            if name and matches_any(name, SENSITIVE_PATTERNS)
+        })
         return CaptureResult(
             base_sha=base_sha, result_sha=result_sha, no_change=False, files=files,
             scope_violations=violations, excluded_sensitive=excluded, conflict_markers=markers,
-            sensitive_committed=sensitive_committed,
+            sensitive_committed=sensitive_committed, excluded_embedded=embedded,
         )
 
     def remove(self, repository_root: str, path: str | Path, *, attempt_live: bool) -> None:
@@ -358,6 +391,20 @@ class WorkspaceManager:
         return True
 
     # -- internals ----------------------------------------------------------
+
+    def _object_lock(self, path: Path) -> threading.Lock:
+        """One lock per shared object database (canonical common Git dir).
+
+        Worktrees share `.git/objects`. On Windows, two Git processes writing
+        the same loose object at once (two agents producing a file with
+        identical content) can fail with "Permission denied"; commits and
+        merges into one repository are therefore serialized here."""
+
+        common = self._git(str(path), ["rev-parse", "--path-format=absolute",
+                                       "--git-common-dir"]).strip()
+        key = self._canonical(Path(common))
+        with WorkspaceManager._locks_guard:
+            return WorkspaceManager._object_locks.setdefault(key, threading.Lock())
 
     def _require_worktree(self, path: Path) -> None:
         """Refuse to run Git in a workspace whose `.git` link is missing or
@@ -405,13 +452,12 @@ class WorkspaceManager:
             candidate = path / candidate
         return candidate.exists()
 
-    def _diff_files(self, worktree: str, base_sha: str, result_sha: str) -> list[CapturedFile]:
+    def _name_status(self, worktree: str, revisions: list[str]) -> list[CapturedFile]:
+        """Parse `git diff --name-status -z -M` for `revisions` (binary flags
+        are not filled in here)."""
+
         raw = self._git(worktree, ["diff", "--no-ext-diff", "--no-textconv", "--name-status",
-                                   "-z", "-M", base_sha, result_sha, "--"])
-        numstat = GitRepositoryInspector._parse_numstat(self._git(worktree, [
-            "diff", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "-M",
-            base_sha, result_sha, "--",
-        ]))
+                                   "-z", "-M", *revisions, "--"])
         fields = raw.split("\0")[:-1] if raw else []
         files: list[CapturedFile] = []
         index = 0
@@ -422,16 +468,36 @@ class WorkspaceManager:
             if code[:1] in {"R", "C"}:
                 old, new = fields[index], fields[index + 1]
                 index += 2
-                stat = numstat.get(new)
                 files.append(CapturedFile(new, "renamed" if code[0] == "R" else "copied",
-                                          old_path=old, binary=bool(stat and stat.binary)))
+                                          old_path=old))
                 continue
-            name = fields[index]
+            files.append(CapturedFile(fields[index], names.get(code[:1], "modified")))
             index += 1
-            stat = numstat.get(name)
-            files.append(CapturedFile(name, names.get(code[:1], "modified"),
+        return files
+
+    def _diff_files(self, worktree: str, base_sha: str, result_sha: str) -> list[CapturedFile]:
+        numstat = GitRepositoryInspector._parse_numstat(self._git(worktree, [
+            "diff", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "-M",
+            base_sha, result_sha, "--",
+        ]))
+        files = []
+        for item in self._name_status(worktree, [base_sha, result_sha]):
+            stat = numstat.get(item.path)
+            files.append(CapturedFile(item.path, item.status, old_path=item.old_path,
                                       binary=bool(stat and stat.binary)))
         return files
+
+    def _unstage(self, worktree: str, paths: list[str]) -> None:
+        # Literal pathspecs: an agent-chosen file name such as `*.key` must
+        # name only itself, never act as a glob over other files.
+        self._git(worktree, ["--literal-pathspecs", "reset", "-q", "HEAD", "--", *paths])
+
+    def _embedded_repositories(self, worktree: str) -> list[str]:
+        """Untracked directories that are Git repositories of their own; Git
+        lists each as a single `dir/` entry instead of its files."""
+
+        output = self._git(worktree, ["ls-files", "-z", "--others", "--exclude-standard"])
+        return sorted(item.rstrip("/") for item in output.split("\0") if item.endswith("/"))
 
     @staticmethod
     def _has_markers(file_path: Path) -> bool:

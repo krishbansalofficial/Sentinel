@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -328,3 +330,51 @@ def test_concurrent_dependency_edits_cannot_create_a_cycle(tmp_path) -> None:
     final_b = repository.get(b.id)
     both_have_edges = bool(final_a.depends_on_task_ids) and bool(final_b.depends_on_task_ids)
     assert not both_have_edges, "both directions applied: the graph has a cycle"
+
+
+def test_execution_fields_persist_and_replay(tmp_path) -> None:
+    repository = _make_repo(tmp_path)
+    task = replace(
+        _new_task(CHANGE_A), executable="python", args=("-m", "agent", "{instructions}"),
+        write_paths=("src/**",), verification=({"executable": "pytest", "args": ["-q"],
+                                                "timeout_seconds": 60},),
+        resources=({"key": "port:8080", "units": 1},),
+    )
+    created = repository.create(task, idempotency_key="exec-1", request_hash="h")
+
+    reopened = TaskRepository(repository.database)
+    stored = reopened.get(task.id)
+    assert stored == created
+    assert stored.args == ("-m", "agent", "{instructions}")
+    assert stored.resources == ({"key": "port:8080", "units": 1},)
+    assert repository.create(task, idempotency_key="exec-1", request_hash="h") == created
+
+
+def test_idempotency_record_from_before_execution_fields_still_replays(tmp_path) -> None:
+    """Records written by the Phase 1 code have no execution keys."""
+
+    repository = _make_repo(tmp_path)
+    task = _new_task(CHANGE_A)
+    repository.create(task, idempotency_key="old", request_hash="h")
+    with repository.database.connection(immediate=True) as connection:
+        row = connection.execute(
+            "SELECT result_json FROM idempotency_records WHERE key = 'old'").fetchone()
+        payload = json.loads(row["result_json"])
+        for key in ("executable", "args", "write_paths", "verification", "resources"):
+            payload.pop(key)
+        connection.execute("UPDATE idempotency_records SET result_json = ? WHERE key = 'old'",
+                           (json.dumps(payload),))
+    replayed = repository.create(task, idempotency_key="old", request_hash="h")
+    assert replayed.id == task.id and replayed.args == () and replayed.executable is None
+
+
+def test_empty_edit_changes_nothing_and_journals_nothing(tmp_path) -> None:
+    repository = _make_repo(tmp_path)
+    task = repository.create(_new_task(CHANGE_A))
+    with repository.database.connection() as connection:
+        before = connection.execute("SELECT COUNT(*) AS n FROM journal_events").fetchone()["n"]
+    edited = repository.edit(task.id, 1, datetime.now(UTC), {})
+    with repository.database.connection() as connection:
+        after = connection.execute("SELECT COUNT(*) AS n FROM journal_events").fetchone()["n"]
+    assert edited.revision == 1
+    assert after == before

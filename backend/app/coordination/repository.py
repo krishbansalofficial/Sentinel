@@ -70,8 +70,10 @@ class TaskRepository:
                     assigned_actor_id, adapter, state, revision, priority,
                     enqueue_seq, max_attempts, execution_timeout_seconds,
                     waiting_reason, failure_reason_json, created_at, updated_at,
-                    submitted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    submitted_at, executable, args_json, write_paths_json,
+                    verification_json, resources_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                          ?, ?, ?, ?, ?)
                 """,
                 self._task_values(resolved),
             )
@@ -152,7 +154,8 @@ class TaskRepository:
                     (*values, updated_at.isoformat(), str(task_id), expected_revision),
                 )
             updated = self._require_task(connection, task_id)
-            if self.journal is not None:
+            # An edit that names no fields changes nothing, so it records nothing.
+            if self.journal is not None and columns:
                 self.journal.append(
                     updated.change_id, JournalEventType.TASK_EDITED,
                     subject_type="task", subject_id=task_id,
@@ -446,6 +449,11 @@ class TaskRepository:
             depends_on_task_ids=tuple(
                 UUID(r["depends_on_task_id"]) for r in edge_rows
             ),
+            executable=row["executable"],
+            args=tuple(json.loads(row["args_json"])),
+            write_paths=tuple(json.loads(row["write_paths_json"])),
+            verification=tuple(json.loads(row["verification_json"])),
+            resources=tuple(json.loads(row["resources_json"])),
         )
 
     @staticmethod
@@ -469,6 +477,11 @@ class TaskRepository:
             task.created_at.isoformat(),
             task.updated_at.isoformat(),
             task.submitted_at.isoformat() if task.submitted_at else None,
+            task.executable,
+            json.dumps(list(task.args)),
+            json.dumps(list(task.write_paths)),
+            json.dumps(list(task.verification)),
+            json.dumps(list(task.resources)),
         )
 
     # -- idempotency envelope (mirrors ChangeRepository) -----------------
@@ -550,6 +563,11 @@ class TaskRepository:
             "updated_at": task.updated_at.isoformat(),
             "submitted_at": task.submitted_at.isoformat() if task.submitted_at else None,
             "depends_on_task_ids": [str(i) for i in task.depends_on_task_ids],
+            "executable": task.executable,
+            "args": list(task.args),
+            "write_paths": list(task.write_paths),
+            "verification": list(task.verification),
+            "resources": list(task.resources),
         }
 
     @staticmethod
@@ -588,4 +606,10 @@ class TaskRepository:
             depends_on_task_ids=tuple(
                 UUID(i) for i in payload.get("depends_on_task_ids", ())
             ),
+            # Records written before these fields existed replay as empty.
+            executable=payload.get("executable"),
+            args=tuple(payload.get("args", ())),
+            write_paths=tuple(payload.get("write_paths", ())),
+            verification=tuple(payload.get("verification", ())),
+            resources=tuple(payload.get("resources", ())),
         )
