@@ -46,7 +46,7 @@ def test_monitor_records_production_call_into_changed_test(tmp_path: Path,
          "-m", "coverage", "run", "-m", "pytest", "-q", "tests/test_price.py",
          "-o", "addopts=", f"--junitxml={scratch / 'junit.xml'}"])
     (scratch / record_name).write_text(json.dumps({
-        "schema": 1, "backend": "sys.monitoring",
+        "schema": 2, "backend": "sys.monitoring", "intact": True,
         "changed_tests": ["tests/test_helpers.py"], "violations": [],
     }), encoding="utf-8")
     run = subprocess.run(argv, cwd=root, capture_output=True, text=True, timeout=30)
@@ -110,6 +110,13 @@ def test_monitor_records_production_import_of_changed_test_module(tmp_path: Path
 def test_monitor_evidence_is_fail_closed() -> None:
     assert "missing" in assess_record(None, ["tests/test_helpers.py"])
     assert "unreadable" in assess_record(b"not json", ["tests/test_helpers.py"])
+    for intact in (False, None):
+        record = {"schema": 2, "backend": "sys.monitoring",
+                  "changed_tests": ["tests/test_helpers.py"], "violations": []}
+        if intact is not None:
+            record["intact"] = intact
+        assert "disabled" in assess_record(json.dumps(record).encode(),
+                                           ["tests/test_helpers.py"])
 
 
 def test_required_evaluator_needs_clean_monitor_record(tmp_path: Path) -> None:
@@ -139,12 +146,12 @@ def test_required_evaluator_needs_clean_monitor_record(tmp_path: Path) -> None:
                   monitor_requested=True)
     missing = evaluate_report(**common, monitor_record=None)
     assert missing.diff_exercised == "UNKNOWN" and missing.gate_satisfied is False
-    clean = json.dumps({"schema": 1, "backend": "sys.monitoring",
+    clean = json.dumps({"schema": 2, "backend": "sys.monitoring", "intact": True,
                         "changed_tests": ["tests/test_helpers.py"],
                         "violations": []}).encode()
     passed = evaluate_report(**common, monitor_record=clean)
     assert passed.diff_exercised == "PASS" and passed.gate_satisfied is True
-    violated = json.dumps({"schema": 1, "backend": "sys.monitoring",
+    violated = json.dumps({"schema": 2, "backend": "sys.monitoring", "intact": True,
                            "changed_tests": ["tests/test_helpers.py"],
                            "violations": ["module.py:2 -> tests/test_helpers.py:1"]}).encode()
     blocked = evaluate_report(**common, monitor_record=violated)
@@ -152,3 +159,69 @@ def test_required_evaluator_needs_clean_monitor_record(tmp_path: Path) -> None:
     assert any("module.py:2" in reason for reason in blocked.reasons)
 
 
+@pytest.mark.parametrize("disable", [
+    "sys.monitoring.set_events(sys.monitoring.PROFILER_ID, 0)",
+    "sys.monitoring.free_tool_id(sys.monitoring.PROFILER_ID)",
+])
+def test_monitor_reports_agent_disabling_it(tmp_path: Path, disable: str) -> None:
+    root = tmp_path / "tree"
+    scratch = tmp_path / "scratch"
+    (root / "tests").mkdir(parents=True)
+    scratch.mkdir()
+    (root / "tests/__init__.py").write_text("", encoding="utf-8")
+    (root / "tests/test_helpers.py").write_text(
+        "def test_compute(x=0):\n    return x\n", encoding="utf-8")
+    (root / "module.py").write_text(
+        "import sys\n"
+        "def price(x):\n"
+        f"    {disable}\n"
+        "    return sys.modules['tests.test_helpers'].test_compute(x)\n",
+        encoding="utf-8")
+    (root / "tests/test_price.py").write_text(
+        "import tests.test_helpers\nfrom module import price\n"
+        "def test_price():\n    assert price(5) == 5\n", encoding="utf-8")
+    argv, record_name = prepare_monitor(
+        scratch, root, ["tests/test_helpers.py"],
+        [sys.executable, "-X", f"pycache_prefix={scratch / 'pycache'}",
+         "-m", "coverage", "run", "-m", "pytest", "-q", "tests/test_price.py",
+         "-o", "addopts=", f"--junitxml={scratch / 'junit.xml'}"])
+    run = subprocess.run(argv, cwd=root, capture_output=True, text=True, timeout=30)
+    assert run.returncode == 0, run.stdout + run.stderr
+    record = (scratch / record_name).read_bytes()
+    assert json.loads(record)["intact"] is False
+    assert "disabled" in assess_record(record, ["tests/test_helpers.py"])
+
+
+def test_profile_fallback_observes_worker_threads(tmp_path: Path) -> None:
+    root = tmp_path / "tree"
+    (root / "tests").mkdir(parents=True)
+    (root / "tests/test_helpers.py").write_text(
+        "def test_compute(x=0):\n    return x\n", encoding="utf-8")
+    (root / "module.py").write_text(
+        "import threading\n"
+        "def _work(helper):\n    return helper.test_compute(5)\n"
+        "def price(helper):\n"
+        "    worker = threading.Thread(target=_work, args=(helper,))\n"
+        "    worker.start()\n    worker.join()\n", encoding="utf-8")
+    output = tmp_path / "record.json"
+    monitor = Path(__file__).parents[2] / "app/assurance/test_call_monitor.py"
+    # Hold the profiler tool id first so the monitor must use its profile fallback.
+    script = (
+        "import importlib, importlib.util, sys\n"
+        "sys.monitoring.use_tool_id(sys.monitoring.PROFILER_ID, 'occupied')\n"
+        f"spec = importlib.util.spec_from_file_location('monitor', {str(monitor)!r})\n"
+        "monitor = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(monitor)\n"
+        f"assert monitor.install_monitor(root={str(root)!r}, "
+        f"changed_tests=['tests/test_helpers.py'], output={str(output)!r}) == 'sys.setprofile'\n"
+        f"sys.path.insert(0, {str(root)!r})\n"
+        "import module\n"
+        "helper = importlib.import_module('tests.test_helpers')\n"
+        "module.price(helper)\n")
+    run = subprocess.run([sys.executable, "-c", script], cwd=root,
+                         capture_output=True, text=True, timeout=30)
+    assert run.returncode == 0, run.stdout + run.stderr
+    record = output.read_bytes()
+    assert json.loads(record)["backend"] == "sys.setprofile"
+    reason = assess_record(record, ["tests/test_helpers.py"])
+    assert reason is not None and "module.py:" in reason

@@ -15,7 +15,9 @@ from pathlib import Path
 from uuid import UUID
 
 from backend.app.assurance.diff_map import _classification, map_diff
-from backend.app.assurance.test_call_monitor import assess_record, prepare_monitor
+from backend.app.assurance.test_call_monitor import (
+    assess_record, monitored_tests, prepare_monitor,
+)
 from backend.app.contracts.models import (
     ChangeView, DiffCoverageFile, DiffCoverageRequest, DiffCoverageResult, GitCheckpoint, utc_now,
 )
@@ -310,9 +312,7 @@ def evaluate_report(
                 state = "UNKNOWN"
                 override_reasons.append(risk)
     if rule.rule.required and monitor_requested:
-        monitored = sorted(path for path, reason in excluded.items()
-                           if reason == "test code" and path.lower().endswith(".py"))
-        monitor_reason = assess_record(monitor_record, monitored)
+        monitor_reason = assess_record(monitor_record, monitored_tests(excluded))
         if monitor_reason:
             state = "UNKNOWN"
             override_reasons.append(monitor_reason)
@@ -444,10 +444,7 @@ def collect_diff_coverage(
                     "-o", "addopts=", f"--junitxml={junit}"]
             # 06 N6-01: run coverage through the runtime caller monitor (same process).
             argv, monitor_name = prepare_monitor(
-                evidence, check_root,
-                sorted(path for path, reason in mapped.excluded.items()
-                       if reason == "test code" and path.lower().endswith(".py")),
-                argv)
+                evidence, check_root, monitored_tests(mapped.excluded), argv)
             # IN-05: the persisted command names box paths by placeholder, never host paths.
             result = result.model_copy(update={"command": [
                 "<box-python>" if part == box_python

@@ -12,11 +12,14 @@ import json
 import os
 import runpy
 import sys
+import threading
 from pathlib import Path
 
 RECORD_NAME = "test-call-monitor.json"
 CONFIG_NAME = "test-call-monitor-config.json"
 SCRIPT_NAME = "test-call-monitor.py"
+TOOL_NAME = "sentinel-test-call-monitor"
+SCHEMA = 2
 MAX_VIOLATIONS = 128
 
 
@@ -40,6 +43,12 @@ def _is_test_code(relative: str) -> bool:
     name = relative.rsplit("/", 1)[-1].lower()
     return (name == "conftest.py" or name.startswith("test_") and name.endswith(".py")
             or name.endswith("_test.py") or "tests" in relative.lower().split("/"))
+
+
+def monitored_tests(excluded: dict[str, str]) -> list[str]:
+    """Changed Python test modules the monitor watches, in record order."""
+    return sorted(path for path, reason in excluded.items()
+                  if reason == "test code" and path.lower().endswith(".py"))
 
 
 def install_monitor(*, root: str, changed_tests: list[str], output: str) -> str:
@@ -72,16 +81,19 @@ def install_monitor(*, root: str, changed_tests: list[str], output: str) -> str:
 
     backend = "sys.setprofile"
     monitoring = getattr(sys, "monitoring", None)
+    tool = monitoring.PROFILER_ID if monitoring is not None else None
     if monitoring is not None:
         acquired = False
         try:
-            tool = monitoring.PROFILER_ID
-            monitoring.use_tool_id(tool, "sentinel-test-call-monitor")
+            monitoring.use_tool_id(tool, TOOL_NAME)
             acquired = True
 
             def on_start(code, _offset):
-                frame = sys._getframe(1)
-                observe(code, frame)
+                # A code object's file never changes, so a non-target location can be
+                # switched off for good instead of re-entering Python on every call.
+                if target(code.co_filename) is None:
+                    return monitoring.DISABLE
+                observe(code, sys._getframe(1))
 
             monitoring.register_callback(tool, monitoring.events.PY_START, on_start)
             monitoring.set_events(tool, monitoring.events.PY_START)
@@ -89,7 +101,7 @@ def install_monitor(*, root: str, changed_tests: list[str], output: str) -> str:
         except (AttributeError, RuntimeError, ValueError):
             if acquired:
                 try:
-                    monitoring.free_tool_id(monitoring.PROFILER_ID)
+                    monitoring.free_tool_id(tool)
                 except (AttributeError, RuntimeError, ValueError):
                     pass
     if backend == "sys.setprofile":
@@ -97,10 +109,24 @@ def install_monitor(*, root: str, changed_tests: list[str], output: str) -> str:
             if event == "call":
                 observe(frame.f_code, frame)
 
-        sys.setprofile(on_call)
+        # Every thread, not just this one: production code on a worker thread must
+        # not reach changed tests unobserved.
+        threading.setprofile_all_threads(on_call)
+
+    def intact() -> bool:
+        # Agent code shares this process and can switch the hook off; an empty
+        # violation list only counts if the hook was still installed at exit.
+        try:
+            if backend == "sys.monitoring":
+                return (monitoring.get_tool(tool) == TOOL_NAME and
+                        bool(monitoring.get_events(tool) & monitoring.events.PY_START))
+            return sys.getprofile() is on_call
+        except (AttributeError, RuntimeError, ValueError):
+            return False
 
     def write_record() -> None:
-        record = {"schema": 1, "backend": backend, "changed_tests": sorted(targets.values()),
+        record = {"schema": SCHEMA, "backend": backend,
+                  "changed_tests": sorted(targets.values()), "intact": intact(),
                   "violations": violations}
         # Agent code runs in this process and can pre-create the known scratch
         # name. Our atexit handler runs after handlers registered by tests, so
@@ -133,7 +159,7 @@ def assess_record(data: bytes | None, changed_tests: list[str]) -> str | None:
         record = json.loads(data)
     except (ValueError, UnicodeError, RecursionError):
         return "Test-call monitor record is unreadable."
-    if (not isinstance(record, dict) or record.get("schema") != 1 or
+    if (not isinstance(record, dict) or record.get("schema") != SCHEMA or
             record.get("backend") not in {"sys.monitoring", "sys.setprofile"} or
             record.get("changed_tests") != sorted(changed_tests) or
             not isinstance(record.get("violations"), list) or
@@ -141,6 +167,8 @@ def assess_record(data: bytes | None, changed_tests: list[str]) -> str | None:
             any(not isinstance(item, str) or not item or len(item) > 4096
                 for item in record["violations"])):
         return "Test-call monitor record is invalid."
+    if record.get("intact") is not True:
+        return "Test-call monitor was disabled or replaced before the run ended."
     if record["violations"]:
         return ("Repository production frame reached changed test module "
                 "(including callbacks): " + record["violations"][0])
