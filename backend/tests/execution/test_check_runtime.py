@@ -716,8 +716,14 @@ def test_real_grant_and_revoke_are_exact_inverses(entry: Path, cache: Path) -> N
     ACEs must be exactly the original ones plus (then minus) the single grant.
     """
 
+    from backend.app.execution import acl
     from backend.app.execution.appcontainer import derive_package_sid
 
+    # Python 3.13+ may give pytest's tmp tree an explicit ACL, which the grant's
+    # re-propagation then turns into inherited ACEs (CI run 36963879533); /reset
+    # makes the cache tree inherit, so the before/after comparison holds on any host.
+    subprocess.run([str(acl.icacls_executable()), str(cache), "/reset", "/T"],
+                   capture_output=True, check=True)
     sid = derive_package_sid("sentinel.test." + uuid4().hex)  # derivation only; no profile
     child = entry / "python.exe"
     before_dir, before_child = _dacl_aces(entry), _dacl_aces(child)
