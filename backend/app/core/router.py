@@ -398,6 +398,35 @@ def build_router(service: ChangeService, runtime: RuntimeServices) -> APIRouter:
         )
 
     @router.post(
+        "/providers/gitlab/connect",
+        response_model=ProviderConnectionStatus,
+        tags=["providers"],
+    )
+    def connect_gitlab(request: ProviderConnectRequest) -> ProviderConnectionStatus:
+        """Store a GitLab token; CI outcomes for gitlab.com remotes read commit statuses."""
+        runtime.credentials.connect("gitlab", request.token)
+        return ProviderConnectionStatus(provider="gitlab", configured=True)
+
+    @router.post(
+        "/providers/gitlab/disconnect",
+        response_model=ProviderConnectionStatus,
+        tags=["providers"],
+    )
+    def disconnect_gitlab() -> ProviderConnectionStatus:
+        runtime.credentials.disconnect("gitlab")
+        return ProviderConnectionStatus(provider="gitlab", configured=False)
+
+    @router.get(
+        "/providers/gitlab/status",
+        response_model=ProviderConnectionStatus,
+        tags=["providers"],
+    )
+    def gitlab_status() -> ProviderConnectionStatus:
+        return ProviderConnectionStatus(
+            provider="gitlab", configured=runtime.credentials.is_configured("gitlab")
+        )
+
+    @router.post(
         "/providers/github/app/flows",
         response_model=GitHubAppFlowResult,
         status_code=status.HTTP_201_CREATED,
@@ -485,6 +514,23 @@ def build_router(service: ChangeService, runtime: RuntimeServices) -> APIRouter:
     def issue_github_grant(
         change_id: UUID, request: CredentialGrantRequest
     ) -> CredentialGrant:
+        return runtime.credentials.issue_grant(
+            request.actor_id, change_id, request.scopes, request.ttl_seconds
+        )
+
+    @router.post(
+        "/changes/{change_id}/providers/gitlab/grants",
+        response_model=CredentialGrant,
+        status_code=status.HTTP_201_CREATED,
+        tags=["providers"],
+    )
+    def issue_gitlab_grant(
+        change_id: UUID, request: CredentialGrantRequest
+    ) -> CredentialGrant:
+        """A GitLab credential grant; only gitlab.* scopes are accepted here."""
+        if not request.scopes or any(not scope.startswith("gitlab.") for scope in request.scopes):
+            raise AppError("GRANT_SCOPE_INVALID",
+                           "A GitLab grant carries only gitlab.* scopes.", status_code=422)
         return runtime.credentials.issue_grant(
             request.actor_id, change_id, request.scopes, request.ttl_seconds
         )
