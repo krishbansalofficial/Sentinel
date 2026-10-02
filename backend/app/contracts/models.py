@@ -1244,6 +1244,19 @@ class PassportV2LaunchBinding(ContractModel):
     record_digest: Digest
 
 
+# Observed agent execution boundary. APPCONTAINER only from verified token facts;
+# RESTRICTED_TOKEN and UNCONFINED name weaker launches; UNKNOWN when unestablished.
+ExecutionBoundary = Literal["APPCONTAINER", "RESTRICTED_TOKEN", "UNCONFINED", "UNKNOWN"]
+
+
+class PassportV2LaunchBoundary(ContractModel):
+    """One launch and the boundary its persisted records establish (additive)."""
+
+    run_id: UUID
+    boundary: ExecutionBoundary
+    package_sid: ShortText | None = None
+
+
 class PassportV2DiffClaim(ContractModel):
     """Three independent Phase 6 claims, plus the measurement's known limit."""
 
@@ -1272,7 +1285,7 @@ class PassportV2Payload(ContractModel):
     journal_event_count: int = Field(ge=0)
     journal_integrity: Literal["PASS", "UNKNOWN"]
     launch_records: list[PassportV2LaunchBinding] = Field(max_length=1024)
-    execution_boundary: Literal["UNKNOWN"] = "UNKNOWN"
+    execution_boundary: ExecutionBoundary = "UNKNOWN"
     diff_coverage: PassportV2DiffClaim = Field(default_factory=PassportV2DiffClaim)
     runs_later: Literal["UNKNOWN"] = "UNKNOWN"
     limitations: list[ShortText] = Field(default_factory=list, max_length=32)
@@ -1292,6 +1305,10 @@ class PassportV2Payload(ContractModel):
     # Phase 5 (additive, D2): each check run of the Change and the boundary it was
     # observed to run under (APPCONTAINER only when verified; None otherwise).
     check_runs: list[PassportV2CheckRun] = Field(default_factory=list, max_length=1024)
+    # Additive: each launch of the Change and its observed boundary; the
+    # ``execution_boundary`` claim is the weakest of these.
+    launch_boundaries: list[PassportV2LaunchBoundary] = Field(default_factory=list,
+                                                              max_length=1024)
 
 
 class PassportV2Issued(ContractModel):
@@ -1356,7 +1373,7 @@ class GitHubCheckPublicationResult(ContractModel):
     diff_exercised: Literal["PASS", "FAIL", "UNKNOWN", "STALE", "NOT_APPLICABLE"] | None = None
     freshness: Literal["CURRENT", "STALE", "UNKNOWN"] | None = None
     signed_freshness: Literal["CURRENT", "STALE", "UNKNOWN"] | None = None
-    execution_boundary: Literal["UNKNOWN"] | None = None
+    execution_boundary: ExecutionBoundary | None = None
 
 
 class PolicyPresetEvaluation(ContractModel):
