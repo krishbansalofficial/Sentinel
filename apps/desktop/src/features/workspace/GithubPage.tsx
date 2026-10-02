@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { DataTable, EmptyState, PageHeader, Section, Skeleton, StatusLabel, td, th } from "@/components/product";
-import { GithubConnection } from "@/features/delivery/GithubConnection";
+import { GithubConnection, GitlabConnection } from "@/features/delivery/GithubConnection";
 import { KIND_LABEL, groupOutcomes } from "@/features/delivery/outcomes";
 import { formatRelative, outcomeInfo, shortSha } from "@/lib/status";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,7 @@ export function GithubPage() {
     <>
       <PageHeader title="GitHub" description="Sentinel opens and tracks pull requests through scoped, time-limited grants, never a raw token." />
       <Section title="Connection"><GithubConnection /></Section>
+      <Section title="GitLab" description="Repositories whose origin is on gitlab.com read CI results from GitLab commit statuses, under a separate gitlab.repo.read grant."><GitlabConnection /></Section>
       <Section title="Pull requests and CI across your Changes" description="The newest observation of each kind. Create, refresh or close from a Change's Delivery tab." flush>
         {changes.isPending ? (
           <Skeleton lines={3} label="Loading outcomes" />

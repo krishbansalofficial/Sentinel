@@ -9,7 +9,9 @@ import { useActors } from "@/features/authority/useActors";
 import { ApiError } from "@/lib/api/client";
 import { exportFileName, saveJsonExport, type SaveResult } from "@/lib/export";
 import { evidenceInfo, formatRelative, formatTime, lifecycleInfo, recoveryInfo, signatureInfo, trustInfo } from "@/lib/status";
-import { buildPassport, exportSignedPassport, passportQuery } from "@/services/actions";
+import { buildPassport, exportSignedPassport, issuePassportV2, passportQuery } from "@/services/actions";
+import type { PassportV2Issued } from "@/lib/api/types";
+import { boundaryClaimInfo } from "./v2";
 import { signingKeyQuery } from "@/services/system";
 
 /** "Trace verified" is the honest reading of a verified hash chain; a passport doesn't prove the change is correct. */
@@ -50,6 +52,7 @@ export function PassportTab() {
       {save.isError ? <Notice tone="danger" title="The export wasn't saved" role="alert">{save.error instanceof Error ? save.error.message : "Saving failed."}</Notice> : null}
       {signAndSave.isError ? <Notice tone="danger" title="The signed export wasn't saved" role="alert">{signAndSave.error instanceof ApiError ? signAndSave.error.message : signAndSave.error instanceof Error ? signAndSave.error.message : "The request failed."}</Notice> : null}
       {saved?.kind === "saved" ? <Notice title="Saved" role="status">Written to <code className="break-all">{saved.where}</code>.</Notice> : null}
+      <PassportV2Section changeId={id} />
 
       {!p ? (
         <Section><EmptyState title="No passport yet" action={buildButton}>A passport summarizes intent, authority, evidence, outcomes and tool trust for this Change at one moment. Building one doesn't change the Change.</EmptyState></Section>
@@ -138,5 +141,50 @@ export function PassportTab() {
         </>
       )}
     </>
+  );
+}
+
+/** Passport v2: claims signed from persisted rows only, including the observed execution boundary. */
+function PassportV2Section({ changeId }: { changeId: string }) {
+  const [issued, setIssued] = useState<PassportV2Issued | null>(null);
+  const issue = useMutation({ mutationFn: () => issuePassportV2(changeId), onSuccess: setIssued });
+  const claims = issued?.payload;
+  const boundary = boundaryClaimInfo(claims?.execution_boundary);
+  return (
+    <Section
+      title="Passport v2"
+      description="Signed claims from Sentinel's own records: execution boundary, confined checks, diff coverage and the policy preset decision."
+      action={<Button size="sm" variant={issued ? "outline" : "default"} disabled={issue.isPending} onClick={() => issue.mutate()}>{issue.isPending ? "Signing…" : issued ? "Issue again" : "Issue Passport v2"}</Button>}
+    >
+      {issue.isError ? <Notice tone="danger" title="Passport v2 wasn't issued" role="alert">{issue.error instanceof ApiError ? issue.error.message : "The request failed."}</Notice> : null}
+      {!claims ? <p className="text-sm text-muted-foreground">Nothing issued in this session yet. Issuing signs a snapshot; it never changes the Change.</p> : (
+        <>
+          <Facts items={[
+            { label: "Execution boundary", value: <span title={boundary.detail}><StatusLabel status={boundary} /></span> },
+            { label: "Confined checks", value: claims.confined_checks ?? "UNKNOWN" },
+            { label: "Diff exercised", value: claims.diff_coverage?.diff_exercised ?? "UNKNOWN" },
+            { label: "Policy decision", value: claims.policy_preset_name ? `${claims.policy_decision} (${claims.policy_preset_name} ${claims.policy_preset_version ?? ""})`.trim() : "No preset selected" },
+            { label: "Payload SHA-256", value: <code className="break-all" title={issued!.payload_digest}>{issued!.payload_digest}</code> },
+            { label: "Signer", value: <code className="break-all">{issued!.signer_fingerprint}</code> },
+          ]} />
+          <p className="mt-2 text-xs text-muted-foreground">{boundary.detail}</p>
+          {claims.launch_boundaries?.length ? (
+            <DataTable label="Launch boundaries">
+              <thead><tr><th className={th}>Launch</th><th className={th}>Boundary</th><th className={th}>Package SID</th></tr></thead>
+              <tbody>
+                {claims.launch_boundaries.map((l) => (
+                  <tr key={l.run_id}>
+                    <td className={`${td} mono`} title={l.run_id}>{l.run_id.slice(0, 8)}</td>
+                    <td className={td}><StatusLabel status={boundaryClaimInfo(l.boundary)} /></td>
+                    <td className={`${td} mono break-all`}>{l.package_sid ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+          ) : null}
+          {claims.policy_denials?.length ? <Notice tone="warn" title="Unmet policy requirements"><ul className="list-disc pl-5">{claims.policy_denials.map((d) => <li key={d} className="break-words">{d}</li>)}</ul></Notice> : null}
+        </>
+      )}
+    </Section>
   );
 }
