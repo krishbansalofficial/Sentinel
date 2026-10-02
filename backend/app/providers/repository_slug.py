@@ -36,3 +36,42 @@ def resolve_github_repository_slug(repository_path: str) -> str | None:
         if match:
             return match.group("slug")
     return None
+
+
+# GitLab projects live under (possibly nested) groups: group/subgroup/project.
+_GITLAB_SEGMENT = r"[A-Za-z0-9_][A-Za-z0-9_.-]*"
+_GITLAB_PATH = rf"(?P<path>{_GITLAB_SEGMENT}(?:/{_GITLAB_SEGMENT})+?)"
+_GITLAB_PATTERNS = (
+    re.compile(rf"^git@gitlab\.com:{_GITLAB_PATH}$"),
+    re.compile(rf"^ssh://git@gitlab\.com(?::22)?/{_GITLAB_PATH}$"),
+    re.compile(rf"^https://gitlab\.com/{_GITLAB_PATH}$"),
+)
+
+
+def gitlab_project_path(url: str) -> str | None:
+    """The ``group/.../project`` path of a gitlab.com remote URL, or None."""
+    url = url.strip()
+    url = url[:-1] if url.endswith("/") else url
+    url = url[:-4] if url.endswith(".git") else url
+    for pattern in _GITLAB_PATTERNS:
+        match = pattern.match(url)
+        if match:
+            path = match.group("path")
+            if any(part in (".", "..") or part.endswith(".git") for part in path.split("/")):
+                return None
+            return path
+    return None
+
+
+def resolve_gitlab_project_path(repository_path: str) -> str | None:
+    """Read-only: the gitlab.com project path of ``origin``, through the hardened harness."""
+    try:
+        completed = run_git(
+            repository_path, ["remote", "get-url", "origin"], timeout=5, limit=4096,
+        )
+    except (GitRepositoryError, OSError):
+        return None
+    if (completed.returncode != 0 or completed.timed_out or completed.incomplete
+            or completed.truncated):
+        return None
+    return gitlab_project_path(completed.stdout.decode("utf-8", errors="replace"))
