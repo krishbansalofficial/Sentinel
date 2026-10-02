@@ -84,7 +84,7 @@ from backend.app.identity.errors import (
     self_delegation_not_permitted,
 )
 from backend.app.identity.repository import ActorRepository, DelegationRepository
-from backend.app.outcomes.outcome_port import GitHubOutcomeTracker
+from backend.app.outcomes.outcome_port import GitHubOutcomeTracker, GitLabOutcomeTracker
 from backend.app.outcomes.tracker import OutcomeTracker
 from backend.app.providers.repository_slug import resolve_github_repository_slug
 
@@ -490,8 +490,10 @@ class OutcomeService:
         *,
         policy: PolicyPort,
         journal: JournalWriter | None = None,
+        gitlab_tracker: OutcomeTracker | None = None,
     ) -> None:
         self.tracker = tracker
+        self.gitlab_tracker = gitlab_tracker
         self.broker = broker
         self.change_service = change_service
         self.credentials = credentials
@@ -517,10 +519,15 @@ class OutcomeService:
         # provider operation.
         change = self.change_service.get(change_id)
         grant = self.credentials.require_grant(grant_id, actor_id=actor_id, change_id=change_id)
-        _enforce_policy(self.policy, actor_id, change, "github.repo.read", {},
+        # The provider follows the repository's origin: a gitlab.com remote reads
+        # GitLab commit statuses under its own scope; anything else stays GitHub.
+        gitlab = (self.gitlab_tracker is not None
+                  and GitLabOutcomeTracker.resolve_repository(change.repository_path) is not None)
+        port_class = GitLabOutcomeTracker if gitlab else GitHubOutcomeTracker
+        _enforce_policy(self.policy, actor_id, change, port_class.read_scope, {},
                         journal=self._journal)
-        port: OutcomePort = GitHubOutcomeTracker(
-            self.tracker,
+        port: OutcomePort = port_class(
+            self.gitlab_tracker if gitlab else self.tracker,
             self.broker,
             read_grant_id=grant.id,
             required_check_names=required_check_names,
@@ -533,7 +540,8 @@ class OutcomeService:
                 change_id, JournalEventType.PROVIDER_CI_REFRESHED,
                 actor_id=actor_id, subject_type="change", subject_id=change_id,
                 payload={"required_check_names": required_check_names,
-                         "results_count": len(results)},
+                         "results_count": len(results),
+                         "provider": "gitlab" if gitlab else "github"},
             )
         for outcome in results:
             self.outcomes.create(outcome)

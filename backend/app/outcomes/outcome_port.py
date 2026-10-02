@@ -18,11 +18,26 @@ from backend.app.contracts.models import ChangeView, Outcome, OutcomeKind, Outco
 from backend.app.core.errors import AppError
 from backend.app.credentials.broker import CredentialBroker
 from backend.app.outcomes.tracker import OutcomeTracker
-from backend.app.providers.repository_slug import resolve_github_repository_slug
+from backend.app.providers.repository_slug import (
+    resolve_github_repository_slug,
+    resolve_gitlab_project_path,
+)
 
 
-class GitHubOutcomeTracker:
-    """Implements `backend.app.contracts.ports.OutcomePort`."""
+class ProviderOutcomeTracker:
+    """Implements `backend.app.contracts.ports.OutcomePort` for one CI provider.
+
+    The provider's read scope, its repository resolver and the name used when
+    no matching remote exists are the only differences between providers; the
+    SHA-scoped verification and the outcome mapping are shared.
+    """
+
+    read_scope = "github.repo.read"
+    provider_name = "GitHub"
+
+    @staticmethod
+    def resolve_repository(repository_path: str) -> str | None:
+        return resolve_github_repository_slug(repository_path)
 
     def __init__(
         self,
@@ -43,14 +58,13 @@ class GitHubOutcomeTracker:
             return []
         head_sha = change.git_summary.head_sha
 
-        repository = resolve_github_repository_slug(change.repository_path)
+        repository = self.resolve_repository(change.repository_path)
         if repository is None:
-            return [
-                self._unavailable(change, head_sha, observed_at, "no GitHub remote configured")
-            ]
+            return [self._unavailable(change, head_sha, observed_at,
+                                      f"no {self.provider_name} remote configured")]
 
         try:
-            token = self.broker.resolve_secret(self.read_grant_id, scope="github.repo.read")
+            token = self.broker.resolve_secret(self.read_grant_id, scope=self.read_scope)
         except AppError:
             return [self._unavailable(change, head_sha, observed_at, "no valid read grant")]
 
@@ -108,3 +122,18 @@ class GitHubOutcomeTracker:
             observed_at=observed_at,
             details={"reason": reason},
         )
+
+
+class GitHubOutcomeTracker(ProviderOutcomeTracker):
+    """CI outcomes from GitHub check runs (``github.repo.read``)."""
+
+
+class GitLabOutcomeTracker(ProviderOutcomeTracker):
+    """CI outcomes from GitLab commit statuses (``gitlab.repo.read``)."""
+
+    read_scope = "gitlab.repo.read"
+    provider_name = "GitLab"
+
+    @staticmethod
+    def resolve_repository(repository_path: str) -> str | None:
+        return resolve_gitlab_project_path(repository_path)

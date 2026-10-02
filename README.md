@@ -92,7 +92,8 @@ did doesn't depend on trusting the agent's account of itself.
 - **Connect GitHub deliberately.** Create your own Sentinel GitHub App in one step through
   GitHub's App manifest flow, publish a Check Run on a pull request's head commit, and open or
   close pull requests under a credential grant, with outcomes refreshed under the same authority
-  model.
+  model. Repositories whose `origin` is on gitlab.com read CI outcomes from GitLab commit
+  statuses instead, under a separate `gitlab.repo.read` grant.
 - **Register and trust tools** by exact version or publisher policy, with Authenticode signature
   verification and drift detection if a trusted tool's digest changes underneath it.
 - **Issue a portable Change Passport.** Passport v2 signs a canonical manifest with an ES256 key
@@ -175,8 +176,8 @@ implement typed ports against that contract and are wired together in a single c
 
 ## Interfaces
 
-Every interface below talks to the same backend through the same frozen contract — 82
-operations across 77 routes, described by 142 typed schemas.
+Every interface below talks to the same backend through the same frozen contract — 86
+operations across 81 routes, described by 142 typed schemas.
 
 - **Backend** (`backend/app`) — a local FastAPI service and the single source of truth. SQLite in
   WAL mode, bearer-token authenticated, loopback by default.
