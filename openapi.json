@@ -3984,7 +3984,12 @@
           "execution_boundary": {
             "anyOf": [
               {
-                "const": "UNKNOWN",
+                "enum": [
+                  "APPCONTAINER",
+                  "RESTRICTED_TOKEN",
+                  "UNCONFINED",
+                  "UNKNOWN"
+                ],
                 "type": "string"
               },
               {
@@ -4861,6 +4866,46 @@
         "title": "PassportV2LaunchBinding",
         "type": "object"
       },
+      "PassportV2LaunchBoundary": {
+        "additionalProperties": false,
+        "description": "One launch and the boundary its persisted records establish (additive).",
+        "properties": {
+          "boundary": {
+            "enum": [
+              "APPCONTAINER",
+              "RESTRICTED_TOKEN",
+              "UNCONFINED",
+              "UNKNOWN"
+            ],
+            "title": "Boundary",
+            "type": "string"
+          },
+          "package_sid": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Sid"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "boundary"
+        ],
+        "title": "PassportV2LaunchBoundary",
+        "type": "object"
+      },
       "PassportV2Payload": {
         "additionalProperties": false,
         "properties": {
@@ -4908,8 +4953,13 @@
             "$ref": "#/components/schemas/PassportV2DiffClaim"
           },
           "execution_boundary": {
-            "const": "UNKNOWN",
             "default": "UNKNOWN",
+            "enum": [
+              "APPCONTAINER",
+              "RESTRICTED_TOKEN",
+              "UNCONFINED",
+              "UNKNOWN"
+            ],
             "title": "Execution Boundary",
             "type": "string"
           },
@@ -4942,6 +4992,14 @@
             ],
             "title": "Journal Integrity",
             "type": "string"
+          },
+          "launch_boundaries": {
+            "items": {
+              "$ref": "#/components/schemas/PassportV2LaunchBoundary"
+            },
+            "maxItems": 1024,
+            "title": "Launch Boundaries",
+            "type": "array"
           },
           "launch_records": {
             "items": {

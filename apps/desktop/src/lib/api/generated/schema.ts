@@ -2821,7 +2821,7 @@ export interface components {
             /** Diff Exercised */
             diff_exercised?: ("PASS" | "FAIL" | "UNKNOWN" | "STALE" | "NOT_APPLICABLE") | null;
             /** Execution Boundary */
-            execution_boundary?: "UNKNOWN" | null;
+            execution_boundary?: ("APPCONTAINER" | "RESTRICTED_TOKEN" | "UNCONFINED" | "UNKNOWN") | null;
             /** Freshness */
             freshness?: ("CURRENT" | "STALE" | "UNKNOWN") | null;
             /** Head Sha */
@@ -3163,6 +3163,24 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * PassportV2LaunchBoundary
+         * @description One launch and the boundary its persisted records establish (additive).
+         */
+        PassportV2LaunchBoundary: {
+            /**
+             * Boundary
+             * @enum {string}
+             */
+            boundary: "APPCONTAINER" | "RESTRICTED_TOKEN" | "UNCONFINED" | "UNKNOWN";
+            /** Package Sid */
+            package_sid?: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
         /** PassportV2Payload */
         PassportV2Payload: {
             /**
@@ -3186,9 +3204,9 @@ export interface components {
             /**
              * Execution Boundary
              * @default UNKNOWN
-             * @constant
+             * @enum {string}
              */
-            execution_boundary: "UNKNOWN";
+            execution_boundary: "APPCONTAINER" | "RESTRICTED_TOKEN" | "UNCONFINED" | "UNKNOWN";
             /**
              * Issued At
              * Format: date-time
@@ -3203,6 +3221,8 @@ export interface components {
              * @enum {string}
              */
             journal_integrity: "PASS" | "UNKNOWN";
+            /** Launch Boundaries */
+            launch_boundaries?: components["schemas"]["PassportV2LaunchBoundary"][];
             /** Launch Records */
             launch_records: components["schemas"]["PassportV2LaunchBinding"][];
             /** Lifecycle State */
