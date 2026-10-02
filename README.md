@@ -82,7 +82,9 @@ did doesn't depend on trusting the agent's account of itself.
   exact tested diff and reports, as separate claims, whether checks passed, whether tests executed
   the changed lines, and whether that result is fresh for the current repository state.
 - **Apply versioned policy presets** — `strict`, `standard`, and `docs-only` — that evaluate the
-  persisted evidence and name every unmet requirement.
+  persisted evidence and name every unmet requirement. A selected preset must decide `ALLOW`
+  before a Change can become review-ready or open a pull request, and apply-back refuses any
+  diff that touches a forbidden path.
 - **Delegate scoped, time-limited authority** between actors, and issue credential grants that
   are gated by an actual delegation — not just checked for the target existing.
 - **Connect GitHub deliberately.** Create your own Sentinel GitHub App in one step through
@@ -166,7 +168,7 @@ implement typed ports against that contract and are wired together in a single c
 ## Interfaces
 
 Every interface below talks to the same backend through the same frozen contract — 81
-operations across 76 routes, described by 139 typed schemas.
+operations across 76 routes, described by 140 typed schemas.
 
 - **Backend** (`backend/app`) — a local FastAPI service and the single source of truth. SQLite in
   WAL mode, bearer-token authenticated, loopback by default.
