@@ -10,8 +10,12 @@ from uuid import UUID, uuid4
 
 import typer
 from click.exceptions import UsageError as ClickUsageError
-from typer._click.exceptions import UsageError
 from typer.core import TyperCommand
+
+try:  # Newer Typer releases raise from a private vendored Click; older ones use Click.
+    from typer._click.exceptions import UsageError
+except ImportError:
+    UsageError = ClickUsageError
 
 from backend.app.passport.trust import TrustRegistry, load_public_key
 from backend.app.passport.cng import CngKey
