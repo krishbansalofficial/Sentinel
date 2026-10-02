@@ -3,8 +3,12 @@ import { Link, Outlet, useLocation, useParams } from "@tanstack/react-router";
 import { ArrowLeft, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ErrorState";
-import { Chips, DataTable, EmptyState, Facts, PageHeader, PathText, Section, Skeleton, StatusLabel, td, th } from "@/components/product";
-import type { ChangeContract, ChangeLifecycleState, ChangeView } from "@/lib/api/types";
+import { Chips, DataTable, EmptyState, Facts, Notice, PageHeader, PathText, Section, Skeleton, StatusLabel, td, th } from "@/components/product";
+import { useFormAction } from "@/components/FormDialog";
+import { ApiError } from "@/lib/api/client";
+import { contractLoadErrorText } from "@/features/passport/v2";
+import { loadContractFromRepository } from "@/services/actions";
+import type { ChangeContract, ChangeLifecycleState, ChangeView, RepositoryContractLoadResult } from "@/lib/api/types";
 import { LIFECYCLE_PATH, formatRelative, formatTime, lifecycleInfo, reviewInfo, riskInfo, shortSha } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import { ChangeActions, ContractEditor } from "./Actions";
@@ -296,9 +300,15 @@ function RecentActivity({ changeId }: { changeId: string }) {
 export function ContractTab() {
   const changeId = useChangeId();
   const { data: change } = useQuery(changeDetailQuery(changeId));
+  // Hooks run before any early return, so their order never changes between renders.
+  const [editing, setEditing] = useState(false);
+  const [loaded, setLoaded] = useState<RepositoryContractLoadResult | null>(null);
+  const load = useFormAction({
+    run: (revision: number) => loadContractFromRepository(changeId, { expected_revision: revision }),
+    onSuccess: (result: RepositoryContractLoadResult) => setLoaded(result),
+  });
   if (!change) return null;
   const c: Partial<ChangeContract> = change.contract ?? {};
-  const [editing, setEditing] = useState(false);
   if (editing) return <ContractEditor change={change} onDone={() => setEditing(false)} />;
 
   const rows: { title: string; items: string[] | undefined; empty: string }[] = [
@@ -312,7 +322,27 @@ export function ContractTab() {
 
   return (
     <>
-      <Section title="Intent" action={<Button size="sm" variant="outline" onClick={() => setEditing(true)}>Edit contract</Button>}>
+      {load.isError ? (
+        <Notice tone="danger" title="The repository contract wasn't loaded" role="alert">
+          {load.error instanceof ApiError ? contractLoadErrorText(load.error.code, load.error.message) : "The request failed."}
+        </Notice>
+      ) : null}
+      {loaded ? (
+        <Notice title="Loaded from the repository" role="status">
+          Applied <code>{loaded.path}</code> from baseline commit <code>{shortSha(loaded.commit)}</code> (SHA-256 <code title={loaded.blob_sha256}>{loaded.blob_sha256.slice(0, 12)}</code>).
+        </Notice>
+      ) : null}
+      <Section
+        title="Intent"
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" disabled={load.isPending} title="Apply .sentinel/contract.toml as committed at the baseline commit" onClick={() => { setLoaded(null); load.mutate(change.revision); }}>
+              {load.isPending ? "Loading…" : "Load from repository"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Edit contract</Button>
+          </div>
+        }
+      >
         <p className="whitespace-pre-wrap break-words text-sm leading-6">{change.intent}</p>
       </Section>
       <Section title="Limits">
