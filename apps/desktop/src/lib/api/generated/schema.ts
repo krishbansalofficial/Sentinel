@@ -344,6 +344,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/changes/{change_id}/contract/from-repository": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Load Change Contract From Repository
+         * @description Apply the contract committed at the baseline commit, never the working tree.
+         */
+        post: operations["load_change_contract_from_repository_api_v1_changes__change_id__contract_from_repository_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/changes/{change_id}/delegations": {
         parameters: {
             query?: never;
@@ -3504,6 +3524,24 @@ export interface components {
             /** Limitations */
             limitations?: string[];
         };
+        /**
+         * RepositoryContractLoadRequest
+         * @description Apply the ``.sentinel/contract.toml`` committed at the Change's baseline commit.
+         */
+        RepositoryContractLoadRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** RepositoryContractLoadResult */
+        RepositoryContractLoadResult: {
+            /** Blob Sha256 */
+            blob_sha256: string;
+            change: components["schemas"]["ChangeView"];
+            /** Commit */
+            commit: string;
+            /** Path */
+            path: string;
+        };
         /** RepositoryInfo */
         RepositoryInfo: {
             /** Branch */
@@ -4759,6 +4797,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChangeView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    load_change_contract_from_repository_api_v1_changes__change_id__contract_from_repository_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                Authorization?: string | null;
+            };
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepositoryContractLoadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepositoryContractLoadResult"];
                 };
             };
             /** @description Validation Error */

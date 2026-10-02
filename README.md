@@ -56,7 +56,9 @@ did doesn't depend on trusting the agent's account of itself.
 
 - **Wrap a real Git repository as a Change** with an explicit lifecycle (Draft → Active →
   Recovered/Verified, and others) and a contract: allowed/forbidden paths, required checks,
-  maximum risk, an authority ceiling, and a versioned policy preset.
+  maximum risk, an authority ceiling, and a versioned policy preset. The contract can live in
+  the repository as `.sentinel/contract.toml`; Sentinel reads it from the baseline commit, so an
+  agent's edit to the file cannot loosen its own contract.
 - **Launch Claude Code inside a Windows AppContainer.** Sentinel creates a per-Change AppContainer
   profile, starts the agent suspended, assigns it to a kill-on-close Job Object, re-reads the live
   token to confirm the AppContainer package SID and Low integrity level, and only then lets it
@@ -167,8 +169,8 @@ implement typed ports against that contract and are wired together in a single c
 
 ## Interfaces
 
-Every interface below talks to the same backend through the same frozen contract — 81
-operations across 76 routes, described by 140 typed schemas.
+Every interface below talks to the same backend through the same frozen contract — 82
+operations across 77 routes, described by 142 typed schemas.
 
 - **Backend** (`backend/app`) — a local FastAPI service and the single source of truth. SQLite in
   WAL mode, bearer-token authenticated, loopback by default.
