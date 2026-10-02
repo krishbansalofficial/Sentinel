@@ -11,17 +11,19 @@ import unicodedata
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 from backend.app.contracts.models import PassportV2Payload
 from backend.app.passport.card import render_html, render_svg
-from backend.app.passport.es256 import fingerprint, verify_signature
+from backend.app.passport.es256 import fingerprint, normalize_fingerprint, verify_signature
 from backend.app.passport.format import (
     MAX_BUNDLE_BYTES, MAX_MEMBER_BYTES, serialize_archive,
 )
 from backend.app.passport.jcs import canonicalize, parse_canonical
-from backend.app.passport.trust import TrustRegistry, normalize_fingerprint
+
+if TYPE_CHECKING:  # the registry pulls in Windows key storage; verification does not
+    from backend.app.passport.trust import TrustRegistry
 
 _MAX_ENTRIES = 7
 _MAX_RATIO = 100
@@ -266,8 +268,14 @@ def _claims_summary(claims: PassportV2Payload) -> dict[str, object]:
 
 
 def verify_bundle(path: Path, *, trust: TrustRegistry | None = None,
-                  expected_fingerprint: str | None = None) -> VerificationResult:
-    """Validate structure, every object, signature and explicit recipient trust."""
+                  expected_fingerprint: str | None = None,
+                  use_registry: bool = True) -> VerificationResult:
+    """Validate structure, every object, signature and explicit recipient trust.
+
+    ``use_registry=False`` is the portable, pinned-only mode (CI and non-Windows
+    hosts): no local trust registry is read, so ``expected_fingerprint`` alone
+    decides trust and is required for a VALID verdict.
+    """
     try:
         if not path.is_file() or path.stat().st_size > MAX_BUNDLE_BYTES:
             raise ValueError("Bundle is missing or oversized")
@@ -328,9 +336,29 @@ def verify_bundle(path: Path, *, trust: TrustRegistry | None = None,
             "change_id": str(claims.change_id), "payload_sha256": payload_digest,
             "signer_fingerprint": actual_fp, "claims": summary,
         }
+        if not use_registry:
+            if expected_fingerprint is None:
+                return VerificationResult("INDETERMINATE",
+                                          "No pinned fingerprint was given.", **common)
+            try:
+                pinned = normalize_fingerprint(expected_fingerprint)
+            except ValueError:
+                # A bad pin says nothing about the bundle; never report it as INVALID.
+                return VerificationResult("INDETERMINATE",
+                                          "Pinned fingerprint is malformed.", **common)
+            if pinned != actual_fp:
+                return VerificationResult("INDETERMINATE",
+                                          "Signer does not match the pinned key.", **common)
+            return VerificationResult("VALID", "Signature and pinned key match.",
+                                      signer_identity=signer["identity"], **common)
         try:
-            decision, identity = (trust or TrustRegistry()).decision(spki=spki)
-        except (OSError, ValueError):
+            if trust is None:
+                from backend.app.passport.trust import TrustRegistry
+                trust = TrustRegistry()
+            decision, identity = trust.decision(spki=spki)
+        except (ImportError, OSError, ValueError):
+            # ImportError: the registry needs Windows key storage; off Windows use
+            # use_registry=False with a pinned fingerprint instead.
             return VerificationResult("INDETERMINATE", "Recipient trust registry is unavailable.",
                                       **common)
         if decision == "REVOKED":
