@@ -80,3 +80,6 @@ export type WorkspaceChangedPath = S["WorkspaceChangedPath"];
 export type WorkspaceRunRecord = S["WorkspaceRunRecord"];
 export type AppContainerBoundary = S["AppContainerBoundary"];
 export type PolicyPresetEvaluation = S["PolicyPresetEvaluation"];
+export type RepositoryContractLoadResult = S["RepositoryContractLoadResult"];
+export type PassportV2Issued = S["PassportV2Issued"];
+export type PassportV2Payload = S["PassportV2Payload"];

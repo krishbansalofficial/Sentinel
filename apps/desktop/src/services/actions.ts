@@ -26,9 +26,11 @@ import type {
   GitCheckpointComparison,
   GitCheckpointListResponse,
   OutcomeListResponse,
+  PassportV2Issued,
   ProviderConnectionStatus,
   ProviderOperation,
   RecoveryPlan,
+  RepositoryContractLoadResult,
   ReplayTimeline,
   SignedPassportExport,
   ToolManifest,
@@ -101,6 +103,15 @@ export const runAssurancePlan = (id: string, planId: string, body: { actor_id: s
 // --- delivery ---------------------------------------------------------------------------------------------------------
 export const connectGithub = (token: string) => http.post<ProviderConnectionStatus>("/api/v1/providers/github/connect", { token }, idem());
 export const disconnectGithub = () => http.post<ProviderConnectionStatus>("/api/v1/providers/github/disconnect", undefined, idem());
+export const connectGitlab = (token: string) => http.post<ProviderConnectionStatus>("/api/v1/providers/gitlab/connect", { token }, idem());
+export const disconnectGitlab = () => http.post<ProviderConnectionStatus>("/api/v1/providers/gitlab/disconnect", undefined, idem());
+
+/** Applies .sentinel/contract.toml as committed at the Change's baseline commit (never the working tree). */
+export const loadContractFromRepository = (id: string, body: { expected_revision: number }) =>
+  http.post<RepositoryContractLoadResult>(`${base(id)}/contract/from-repository`, body, idem());
+
+/** Issues a signed Passport v2 from persisted rows only; the request has no body. */
+export const issuePassportV2 = (id: string) => http.post<PassportV2Issued>(`${base(id)}/passport/v2/issue`, undefined, idem());
 export const createGrant = (id: string, body: { actor_id: string; scopes: string[]; ttl_seconds?: number }, key?: string) =>
   http.post<CredentialGrant>(`${base(id)}/providers/github/grants`, body, idem(key));
 export const revokeGrant = (id: string, grantId: string) => http.post<CredentialGrant>(`${base(id)}/providers/github/grants/${seg(grantId)}/revoke`, undefined, idem());
@@ -167,3 +178,5 @@ export const adaptersQuery = () =>
   queryOptions({ queryKey: ["agents", "adapters"] as const, queryFn: ({ signal }) => http.get<AgentAdapterListResponse>("/api/v1/agents/adapters", { signal }), staleTime: 60_000 });
 export const githubStatusQuery = () =>
   queryOptions({ queryKey: ["providers", "github", "status"] as const, queryFn: ({ signal }) => http.get<ProviderConnectionStatus>("/api/v1/providers/github/status", { signal }) });
+export const gitlabStatusQuery = () =>
+  queryOptions({ queryKey: ["providers", "gitlab", "status"] as const, queryFn: ({ signal }) => http.get<ProviderConnectionStatus>("/api/v1/providers/gitlab/status", { signal }) });
