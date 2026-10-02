@@ -172,6 +172,14 @@ class ApiClient:
             json_body={"contract": contract, "expected_revision": expected_revision},
         )
 
+    def load_change_contract_from_repository(self, change_id: UUID, *,
+                                             expected_revision: int) -> Any:
+        return self._request(
+            "POST",
+            f"/api/v1/changes/{change_id}/contract/from-repository",
+            json_body={"expected_revision": expected_revision},
+        )
+
     # -- identity --
     def create_actor(self, kind: str, display_name: str) -> Any:
         return self._request(

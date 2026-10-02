@@ -236,6 +236,23 @@ def change_contract_update(
     )
 
 
+@change_app.command("contract-load")
+def change_contract_load(
+    change_id: UUID,
+    expected_revision: int,
+    api_url: str = ApiUrlOption,
+    json_: bool = JsonOption,
+    no_color: bool = NoColorOption,
+) -> None:
+    """Apply .sentinel/contract.toml as committed at the Change's baseline commit."""
+    _run(
+        lambda: ApiClient(api_url).load_change_contract_from_repository(
+            change_id, expected_revision=expected_revision),
+        as_json=json_,
+        no_color=no_color,
+    )
+
+
 @actor_app.command("create")
 def actor_create(
     kind: str, display_name: str, api_url: str = ApiUrlOption, json_: bool = JsonOption, no_color: bool = NoColorOption
