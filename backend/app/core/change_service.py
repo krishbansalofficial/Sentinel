@@ -184,6 +184,7 @@ class ChangeService:
         request: ChangeContractUpdateRequest,
         *,
         idempotency_key: str | None = None,
+        source: dict[str, object] | None = None,
     ) -> ChangeView:
         updated = self.repository.update_contract(
             change_id,
@@ -192,6 +193,7 @@ class ChangeService:
             self.clock(),
             idempotency_key=idempotency_key,
             request_hash=self._request_hash(request),
+            journal_payload={"source": source} if source else None,
         )
         if updated is None:
             raise change_not_found(str(change_id))

@@ -1550,3 +1550,16 @@ class PassportV2CheckRun(ContractModel):
 
 PassportV2Payload.model_rebuild()
 PassportV2Issued.model_rebuild()
+
+
+class RepositoryContractLoadRequest(ContractModel):
+    """Apply the ``.sentinel/contract.toml`` committed at the Change's baseline commit."""
+
+    expected_revision: int = Field(ge=1)
+
+
+class RepositoryContractLoadResult(ContractModel):
+    change: ChangeView
+    commit: WorkspaceSha
+    path: ShortText
+    blob_sha256: Digest

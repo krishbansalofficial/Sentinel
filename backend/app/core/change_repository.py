@@ -143,6 +143,7 @@ class ChangeRepository:
         *,
         idempotency_key: str | None = None,
         request_hash: str | None = None,
+        journal_payload: dict[str, object] | None = None,
     ) -> StoredChange | None:
         scope = f"change:{change_id}:contract"
         with self.database.connection(immediate=True) as connection:
@@ -174,7 +175,8 @@ class ChangeRepository:
                 self.journal.append(
                     change_id, JournalEventType.CHANGE_CONTRACT_UPDATED,
                     subject_type="change", subject_id=change_id,
-                    payload={"revision": updated.revision}, connection=connection,
+                    payload={**(journal_payload or {}), "revision": updated.revision},
+                    connection=connection,
                 )
             self._record_change_result(
                 connection, scope, idempotency_key, request_hash, updated

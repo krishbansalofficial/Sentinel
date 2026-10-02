@@ -43,6 +43,8 @@ from backend.app.contracts.models import (
     CapabilitiesResponse,
     ChangeCancelRequest,
     ChangeContractUpdateRequest,
+    RepositoryContractLoadRequest,
+    RepositoryContractLoadResult,
     ChangeCreateRequest,
     ChangeForkActionRequest,
     ChangeListResponse,
@@ -94,6 +96,7 @@ from backend.app.passport.bundle import BundleExporter
 from backend.app.providers.github_app import GitHubAppManifestFlows, app_provider_name
 from backend.app.providers.github_check import GitHubCheckPublisher
 from backend.app.providers.http_transport import UrllibHttpTransport
+from backend.app.policy.repo_contract import read_baseline_contract
 from backend.app.policy.version import product_version
 
 
@@ -196,6 +199,39 @@ def build_router(service: ChangeService, runtime: RuntimeServices) -> APIRouter:
         return service.update_contract(
             change_id, request, idempotency_key=idempotency_key
         )
+
+    @router.post(
+        "/changes/{change_id}/contract/from-repository",
+        response_model=RepositoryContractLoadResult,
+        tags=["changes"],
+    )
+    def load_change_contract_from_repository(
+        change_id: UUID,
+        request: RepositoryContractLoadRequest,
+        idempotency_key: IdempotencyHeader = None,
+    ) -> RepositoryContractLoadResult:
+        """Apply the contract committed at the baseline commit, never the working tree."""
+        change = service.get(change_id)
+        baselines = [item for item in runtime.evidence.checkpoints(change_id)
+                     if item.name == "baseline"]
+        if not baselines:
+            raise AppError(
+                "REPOSITORY_CONTRACT_UNAVAILABLE",
+                "Capture a baseline first; the contract is read from the baseline commit.",
+                status_code=409,
+            )
+        baseline = min(baselines, key=lambda item: item.captured_at)
+        loaded = read_baseline_contract(change.repository_path, baseline.head_sha)
+        updated = service.update_contract(
+            change_id,
+            ChangeContractUpdateRequest(contract=loaded.contract,
+                                        expected_revision=request.expected_revision),
+            idempotency_key=idempotency_key,
+            source={"kind": "repository", "path": loaded.path, "commit": loaded.commit,
+                    "blob_sha256": loaded.blob_sha256},
+        )
+        return RepositoryContractLoadResult(change=updated, commit=loaded.commit,
+                                            path=loaded.path, blob_sha256=loaded.blob_sha256)
 
     @router.post(
         "/changes/{change_id}/transition",
