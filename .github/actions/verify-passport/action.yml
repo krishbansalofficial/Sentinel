@@ -1,3 +1,17 @@
+# Usage (pin the action to a full commit SHA; the verifier code comes from that ref,
+# not from the caller's repository):
+#
+#   - uses: krishbansalofficial/Sentinel/.github/actions/verify-passport@<commit-sha>
+#     with:
+#       bundle: artifacts/change.sentinel
+#       fingerprint: ${{ vars.SENTINEL_SIGNER_FINGERPRINT }}
+#
+# Trust model: the pinned fingerprint is the only trust root; no local trust registry
+# is read. Keep it where the pull request author cannot change it (a repository or
+# organization variable), never in the pull request. Wrong or missing pin gives
+# INDETERMINATE; a tampered bundle gives INVALID; the step fails unless VALID.
+# sentinel/passport/* commit statuses are unauthenticated and forgeable by any
+# repository writer: gate on this action, not on the status (see SECURITY.md).
 name: Verify Sentinel Passport
 description: >-
   Verify a .sentinel Passport bundle offline against a pinned signer fingerprint.
