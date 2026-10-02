@@ -39,6 +39,7 @@ from backend.app.git.safe_exec import run_git
 from backend.app.identity.repository import DelegationRepository
 
 _ASSURANCE_TARGETS = frozenset({"LOCALLY_VERIFIED", "REVIEW_READY"})
+_PRESET_TARGETS = frozenset({"REVIEW_READY", "PR_OPEN"})
 
 _UNRESOLVED_RECOVERY_STATUSES = frozenset(
     {
@@ -60,8 +61,10 @@ class RuntimeLifecycleFacts:
         outcomes: OutcomeRepository,
         recovery: RecoveryRepository,
         assurance_facts: Callable[[ChangeView], AssuranceFacts] | None = None,
+        preset_allows: Callable[[ChangeView], bool] | None = None,
     ) -> None:
         self.assurance_facts = assurance_facts
+        self.preset_allows = preset_allows
         self.delegations = delegations
         self.provider_operations = provider_operations
         self.outcomes = outcomes
@@ -112,7 +115,21 @@ class RuntimeLifecycleFacts:
             assurance_fresh=assurance.assurance_fresh,
             deviations_resolved=assurance.deviations_resolved,
             required_evidence_complete=assurance.required_evidence_complete,
+            preset_allowed=self._preset_allowed(change, target_state),
         )
+
+    def _preset_allowed(self, change: ChangeView, target_state: str) -> bool:
+        """The preset decision, evaluated only for the guards that read it.
+
+        Without an evaluator no preset gating is wired, so the fact is True;
+        for other targets it is not computed (and not read).
+        """
+
+        if str(target_state) not in _PRESET_TARGETS:
+            return False
+        if self.preset_allows is None:
+            return True
+        return self.preset_allows(change)
 
     def _assurance(self, change: ChangeView, target_state: str) -> AssuranceFacts:
         """The four `[KB]` facts, computed only for the guards that read them.

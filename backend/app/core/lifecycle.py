@@ -88,8 +88,8 @@ ALLOWED_TRANSITIONS: dict[ChangeLifecycleState, frozenset[ChangeLifecycleState]]
 GUARDS: dict[ChangeLifecycleState, tuple[str, ...]] = {
     _S.ACTIVE: ("repository_valid", "contract_present", "authority_valid"),
     _S.LOCALLY_VERIFIED: ("required_assurance_passed", "assurance_fresh"),
-    _S.REVIEW_READY: ("deviations_resolved", "required_evidence_complete"),
-    _S.PR_OPEN: ("pull_request_recorded",),
+    _S.REVIEW_READY: ("deviations_resolved", "required_evidence_complete", "preset_allowed"),
+    _S.PR_OPEN: ("pull_request_recorded", "preset_allowed"),
     _S.CI_VERIFIED: ("ci_passed_for_current_head",),
     _S.ARTIFACT_BUILT: ("artifact_recorded",),
     _S.DEPLOYED: ("deployment_recorded",),

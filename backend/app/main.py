@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import AsyncIterator
 from uuid import uuid4
 
@@ -71,6 +72,7 @@ from backend.app.identity.repository import ActorRepository, DelegationRepositor
 from backend.app.outcomes.tracker import OutcomeTracker
 from backend.app.passport.builder import PassportBuilder
 from backend.app.passport.signing import SigningService
+from backend.app.policy.gate import preset_allows
 from backend.app.policy.service import DelegationPolicyEngine
 from backend.app.providers.github import GitHubProvider
 from backend.app.providers.http_transport import HttpTransport, UrllibHttpTransport
@@ -203,6 +205,7 @@ def create_app(
         OutcomeRepository(database),
         RecoveryRepository(database),
         assurance_facts=evidence_service.assurance_facts,
+        preset_allows=partial(preset_allows, database),
     )
     service = ChangeService(
         repository=repository,

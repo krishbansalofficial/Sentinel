@@ -335,6 +335,9 @@ class LifecycleFacts(ContractModel):
     recovery_conflict: bool = False
     recovery_failed: bool = False
     unresolved_recovery_actions: bool = False
+    # True when no policy preset is selected, or the selected preset decides ALLOW
+    # on current evidence; gates REVIEW_READY and PR_OPEN.
+    preset_allowed: bool = False
 
 
 class ChangeView(ContractModel):

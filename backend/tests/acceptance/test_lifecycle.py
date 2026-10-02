@@ -46,12 +46,13 @@ def test_draft_can_activate_only_with_repository_contract_and_authority() -> Non
             LifecycleFacts(
                 deviations_resolved=True,
                 required_evidence_complete=True,
+                preset_allowed=True,
             ),
         ),
         (
             ChangeLifecycleState.REVIEW_READY,
             ChangeLifecycleState.PR_OPEN,
-            LifecycleFacts(pull_request_recorded=True),
+            LifecycleFacts(pull_request_recorded=True, preset_allowed=True),
         ),
         (
             ChangeLifecycleState.PR_OPEN,
