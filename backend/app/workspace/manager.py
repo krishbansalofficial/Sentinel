@@ -46,6 +46,7 @@ from backend.app.core.database import Database
 from backend.app.core.errors import AppError
 from backend.app.core.journal import JournalWriter
 from backend.app.execution._process import CapturedProcess
+from backend.app.execution._removal import remove_with_retries
 from backend.app.execution.agent_ports import (
     CredentialFingerprint,
     contains_credential_material,
@@ -98,7 +99,6 @@ _WORKSPACE_DIRECTORY = "ws"
 _CONTAINER_SUBDIRECTORIES = ("ws", "home", "tools", "Temp")
 _REMOVE_ATTEMPTS = 5
 _REMOVE_BACKOFF_SECONDS = 0.2
-_TRANSIENT_WINERRORS = frozenset({5, 32})  # access denied, sharing violation
 PROFILE_DISPLAY_NAME = "Sentinel workspace"
 
 UNTRACKED_SOURCE_LIMITATION = (
@@ -1183,16 +1183,9 @@ class WorkspaceManager:
         ``_REMOVE_ATTEMPTS`` times with a growing delay; anything else raises.
         """
 
-        for attempt in range(1, _REMOVE_ATTEMPTS + 1):
-            try:
-                remove_tree_no_follow(target)
-                return
-            except OSError as exc:
-                transient = (isinstance(exc, PermissionError)
-                             or getattr(exc, "winerror", None) in _TRANSIENT_WINERRORS)
-                if not transient or attempt == _REMOVE_ATTEMPTS:
-                    raise
-                time.sleep(_REMOVE_BACKOFF_SECONDS * attempt)
+        remove_with_retries(lambda: remove_tree_no_follow(target),
+                            attempts=_REMOVE_ATTEMPTS, backoff_seconds=_REMOVE_BACKOFF_SECONDS,
+                            sleep=time.sleep)
 
     def _profile_folder(self, record: WorkspaceRecord) -> tuple[Path, Path]:
         """(``Packages\\<profile>``, its ``AC`` folder), refusing a foreign recorded path."""

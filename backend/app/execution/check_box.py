@@ -45,6 +45,7 @@ from backend.app.core.errors import AppError
 from backend.app.core.journal import JournalWriter
 from backend.app.execution import acl, appcontainer
 from backend.app.execution._process import capture
+from backend.app.execution._removal import remove_with_retries
 from backend.app.execution.agent_staging import _is_reparse
 from backend.app.execution.check_repository import (
     CheckRunRecord,
@@ -70,7 +71,6 @@ DEFAULT_PROFILE_PREFIX = "sentinel.check."
 CONTAINER_SUBDIRECTORIES = ("tree", "scratch", "Temp")
 _REMOVE_ATTEMPTS = 6
 _REMOVE_BACKOFF_SECONDS = 0.25
-_TRANSIENT_WINERRORS = frozenset({5, 32})
 DEFAULT_TREE_SIZE_LIMIT_BYTES = 512 * 1024**2
 MAX_CHECK_TIMEOUT_SECONDS = 3600
 GIT_LIST_TIMEOUT_SECONDS = 120
@@ -259,16 +259,9 @@ class CheckBoxes:
         return self._platform.local_appdata() / "Packages" / record.profile_name
 
     def _remove_with_retries(self, target: Path) -> None:
-        for attempt in range(1, _REMOVE_ATTEMPTS + 1):
-            try:
-                self._platform.remove_tree(target)
-                return
-            except OSError as exc:
-                transient = (isinstance(exc, PermissionError)
-                             or getattr(exc, "winerror", None) in _TRANSIENT_WINERRORS)
-                if not transient or attempt == _REMOVE_ATTEMPTS:
-                    raise
-                time.sleep(_REMOVE_BACKOFF_SECONDS * attempt)
+        remove_with_retries(lambda: self._platform.remove_tree(target),
+                            attempts=_REMOVE_ATTEMPTS, backoff_seconds=_REMOVE_BACKOFF_SECONDS,
+                            sleep=time.sleep)
 
     def _revoke_grants(self, record: CheckRunRecord, problems: list[str]) -> None:
         for grant in record.runtime_grants:
