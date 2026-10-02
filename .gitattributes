@@ -1,0 +1,4 @@
+# Generated from openapi.json and compared byte-for-byte by `npm run api:check`;
+# keep LF in every checkout so the check does not fail on CRLF line endings.
+openapi.json text eol=lf
+apps/desktop/src/lib/api/generated/** text eol=lf
