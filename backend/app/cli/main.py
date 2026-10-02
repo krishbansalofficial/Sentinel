@@ -846,6 +846,67 @@ def tool_trust(
     )
 
 
+@app.command("run")
+def run_command(
+    change_id: UUID,
+    actor_id: UUID,
+    executable: str,
+    args: list[str] = typer.Argument(None, help="Arguments for the executable (put them after --)."),
+    adapter: str = typer.Option("generic", "--adapter"),
+    env: list[str] = typer.Option(None, "--env", help="Environment variable name to forward."),
+    timeout_seconds: int = typer.Option(900, "--timeout"),
+    output_limit_bytes: int = typer.Option(200_000, "--output-limit"),
+    apply: bool = typer.Option(False, "--apply", help="Apply a refusal-free preview after confirmation."),
+    yes: bool = typer.Option(False, "--yes", help="Confirm the apply without a prompt (needs --apply)."),
+    issue_passport: bool = typer.Option(False, "--passport", help="Issue a signed Passport v2 at the end."),
+    api_url: str = ApiUrlOption,
+    json_: bool = JsonOption,
+    no_color: bool = NoColorOption,
+) -> None:
+    """Baseline, launch, preview, optionally apply, capture evidence and issue a Passport."""
+    from backend.app.cli.run_flow import EXIT_GATE_STOPPED, FAILED, STOPPED, RunFlow, RunOptions
+
+    if yes and not apply:
+        raise typer.BadParameter("--yes only confirms --apply")
+    console = _console(no_color)
+
+    def confirm(preview: dict) -> bool:
+        if yes:
+            return True
+        if json_:
+            return False  # machine output never blocks on a prompt
+        paths = [item.get("path") for item in preview.get("changed_paths", [])]
+        console.print("Apply-back would fast-forward your branch with: " + ", ".join(paths))
+        return typer.confirm("Apply these changes?", default=False)
+
+    try:
+        report = RunFlow(ApiClient(api_url), confirm=confirm).run(
+            change_id, actor_id, RunOptions(
+                executable=executable, args=list(args or []), adapter=adapter,
+                environment_keys=list(env or []), timeout_seconds=timeout_seconds,
+                output_limit_bytes=output_limit_bytes, apply=apply,
+                issue_passport=issue_passport))
+    except ApiConnectionError as error:
+        message = f"Could not reach the Change Assurance API: {error}"
+        if json_:
+            typer.echo(json.dumps({"error": {"code": "CONNECTION_ERROR", "message": message}},
+                                  separators=(",", ":"), sort_keys=True))
+        else:
+            console.print(f"[red]CONNECTION_ERROR[/red]: {message}")
+        raise typer.Exit(EXIT_CONNECTION_ERROR)
+    summary = report.as_dict()
+    if json_:
+        typer.echo(json.dumps(summary, separators=(",", ":"), sort_keys=True))
+    else:
+        for step in summary["steps"]:
+            console.print(step)
+        console.print(f"outcome: {summary['outcome']}")
+    if report.outcome == FAILED:
+        raise typer.Exit(EXIT_API_ERROR)
+    if report.outcome == STOPPED:
+        raise typer.Exit(EXIT_GATE_STOPPED)
+
+
 @app.command("migrate-store")
 def migrate_store_command(
     from_path: str | None = typer.Option(
