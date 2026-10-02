@@ -126,6 +126,12 @@ did doesn't depend on trusting the agent's account of itself.
 9. If something needs undoing, preview a recovery plan, approve it explicitly by name, and execute
    it on a dedicated branch — never silently, never on your current branch.
 
+`sentinel run <change> <actor> <executable> [-- args]` runs steps 2 to 8 in one command: it
+reuses an existing baseline, launches the agent, previews the workspace, captures current
+evidence and, with `--passport`, issues a signed Passport v2. It stops at the first gate that does
+not pass. Apply-back still needs `--apply` plus an interactive confirmation (or `--yes`), and only
+a refusal-free preview is ever applied.
+
 ```text
 Your repository + intent
     ↓
