@@ -1,0 +1,84 @@
+# Usage (pin the action to a full commit SHA; the verifier code comes from that ref,
+# not from the caller's repository):
+#
+#   - uses: krishbansalofficial/Sentinel/.github/actions/verify-passport@<commit-sha>
+#     with:
+#       bundle: artifacts/change.sentinel
+#       fingerprint: ${{ vars.SENTINEL_SIGNER_FINGERPRINT }}
+#
+# Trust model: the pinned fingerprint is the only trust root; no local trust registry
+# is read. Keep it where the pull request author cannot change it (a repository or
+# organization variable), never in the pull request. Wrong or missing pin gives
+# INDETERMINATE; a tampered bundle gives INVALID; the step fails unless VALID.
+# sentinel/passport/* commit statuses are unauthenticated and forgeable by any
+# repository writer: gate on this action, not on the status (see SECURITY.md).
+name: Verify Sentinel Passport
+description: >-
+  Verify a .sentinel Passport bundle offline against a pinned signer fingerprint.
+  Fails the step unless the verdict is VALID. Runs on Linux, macOS and Windows runners.
+inputs:
+  bundle:
+    description: Path to the .sentinel bundle, relative to the caller's workspace or absolute.
+    required: true
+  fingerprint:
+    description: >-
+      Expected signer fingerprint (grouped base32 SHA-256). This pin is the only trust
+      root; take it from a source independent of the pull request being checked.
+    required: true
+  python-version:
+    description: Python version used to run the verifier (Sentinel requires >= 3.12).
+    required: false
+    default: '3.12'
+outputs:
+  verdict:
+    description: VALID, INVALID, INDETERMINATE or USAGE_ERROR.
+    value: ${{ steps.verify.outputs.verdict }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      id: python
+      with:
+        python-version: ${{ inputs.python-version }}
+        update-environment: false
+    - name: Install verifier dependencies
+      shell: bash
+      env:
+        PYTHON: ${{ steps.python.outputs.python-path }}
+      # Exact pins from pyproject.toml; the verifier needs nothing else.
+      run: '"$PYTHON" -m pip install --disable-pip-version-check --quiet "cryptography==47.0.0" "pydantic==2.13.5"'
+    - name: Verify Passport
+      id: verify
+      shell: bash
+      env:
+        PYTHON: ${{ steps.python.outputs.python-path }}
+        SENTINEL_ROOT: ${{ github.action_path }}/../../..
+        INPUT_BUNDLE: ${{ inputs.bundle }}
+        INPUT_FINGERPRINT: ${{ inputs.fingerprint }}
+      run: |
+        set -u
+        case "$INPUT_BUNDLE" in
+          /*|[A-Za-z]:[\\/]*) bundle="$INPUT_BUNDLE" ;;
+          *) bundle="$GITHUB_WORKSPACE/$INPUT_BUNDLE" ;;
+        esac
+        # Run from the Sentinel checkout that contains this action, so the verifier
+        # code is the pinned action ref, never a `backend` package in the caller's tree.
+        cd "$SENTINEL_ROOT"
+        set +e
+        result="$("$PYTHON" -m backend.app.passport.portable_verify "$bundle" \
+          --fingerprint "$INPUT_FINGERPRINT" --json)"
+        code=$?
+        set -e
+        echo "$result" | "$PYTHON" -c 'import json,sys; print(json.dumps(json.load(sys.stdin), indent=2, sort_keys=True))' || echo "$result"
+        verdict="$(echo "$result" | "$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("verdict","UNKNOWN"))' 2>/dev/null || echo UNKNOWN)"
+        reason="$(echo "$result" | "$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("reason",""))' 2>/dev/null || true)"
+        echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+        {
+          echo "### Sentinel Passport: $verdict"
+          echo ""
+          echo "$reason"
+        } >> "$GITHUB_STEP_SUMMARY"
+        if [ "$code" -ne 0 ] || [ "$verdict" != "VALID" ]; then
+          echo "::error title=Sentinel Passport::Verdict $verdict (exit $code): $reason"
+          exit 1
+        fi

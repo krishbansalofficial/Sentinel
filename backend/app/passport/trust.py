@@ -9,7 +9,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import re
 import tempfile
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -19,11 +18,13 @@ from typing import Callable, Iterator, Literal, ParamSpec, TypeVar
 
 from cryptography.hazmat.primitives import serialization
 
-from backend.app.passport.cng import CngKey, fingerprint, verify_signature
+from backend.app.passport.cng import CngKey
+from backend.app.passport.es256 import (  # noqa: F401 (normalize_fingerprint re-exported)
+    fingerprint, normalize_fingerprint, verify_signature,
+)
 from backend.app.core.errors import AppError
 from backend.app.core.evidence_store import prepare_store_directory
 
-_FINGERPRINT = re.compile(r"^[A-Z2-7]{52}$")
 _MAX_STORE_BYTES = 1_048_576
 _MAX_KEYS = 256
 P = ParamSpec("P")
@@ -84,13 +85,6 @@ def default_trust_path() -> Path:
     if not local:
         raise OSError("LOCALAPPDATA is required for the Sentinel trust registry")
     return Path(local) / "Sentinel" / "trusted_keys.json"
-
-
-def normalize_fingerprint(value: str) -> str:
-    compact = value.replace("-", "").replace(" ", "").upper()
-    if not _FINGERPRINT.fullmatch(compact):
-        raise ValueError("Invalid grouped base32 SHA-256 fingerprint")
-    return "-".join(compact[index:index + 8] for index in range(0, 52, 8))
 
 
 def load_public_key(path: Path) -> bytes:
