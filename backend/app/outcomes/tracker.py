@@ -3,13 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Protocol
 
-from backend.app.providers.github import GitHubProvider
-from backend.app.providers.models import CheckConclusion, RequiredChecksVerification
+from backend.app.providers.models import (
+    CheckConclusion,
+    CheckRunOutcome,
+    RequiredChecksVerification,
+)
+
+
+class CheckRunSource(Protocol):
+    """A CI provider that lists check results for one commit (GitHub, GitLab)."""
+
+    def list_check_runs_for_sha(
+        self, *, token: str, repository: str, head_sha: str
+    ) -> list[CheckRunOutcome]: ...
 
 
 class OutcomeTracker:
-    def __init__(self, provider: GitHubProvider) -> None:
+    def __init__(self, provider: CheckRunSource) -> None:
         self.provider = provider
 
     def verify_required_checks(
