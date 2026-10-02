@@ -137,6 +137,17 @@ class WorkspaceRepository:
             ).fetchone()
         return WorkspaceRecord.from_row(row) if row is not None else None
 
+    def for_change(
+        self, change_id: UUID, *, connection: sqlite3.Connection | None = None
+    ) -> list[WorkspaceRecord]:
+        """Every workspace of a Change, cleaned ones included (their run records remain)."""
+        with self.database.connection_or(connection) as conn:
+            rows = conn.execute(
+                "SELECT * FROM change_workspaces WHERE change_id = ? ORDER BY created_at, rowid",
+                (str(change_id),),
+            ).fetchall()
+        return [WorkspaceRecord.from_row(row) for row in rows]
+
     def list_unclean(
         self, *, connection: sqlite3.Connection | None = None
     ) -> list[WorkspaceRecord]:

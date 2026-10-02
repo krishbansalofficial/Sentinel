@@ -325,7 +325,7 @@ def test_malformed_coverage_and_restricted_token_never_claim_appcontainer(tmp_pa
             (str(uuid4()), str(change.id), "{broken", datetime.now(UTC).isoformat()),
         )
     snapshot = PassportV2Issuer(database).snapshot(change.id)
-    assert snapshot.execution_boundary == "UNKNOWN"
+    assert snapshot.execution_boundary == "RESTRICTED_TOKEN"
     assert snapshot.diff_coverage.diff_exercised == "UNKNOWN"
     assert any("malformed" in line for line in snapshot.limitations)
 

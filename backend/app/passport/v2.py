@@ -16,6 +16,7 @@ from backend.app.contracts.models import (
     PassportV2DiffClaim,
     PassportV2Issued,
     PassportV2LaunchBinding,
+    PassportV2LaunchBoundary,
     PassportV2Payload,
     utc_now,
 )
@@ -26,6 +27,10 @@ from backend.app.execution.check_repository import (
     CheckRunRepository, change_check_runs_fact, check_run_events,
 )
 from backend.app.git.state import GitStateTracker
+from backend.app.passport.boundary import (
+    change_boundary, launch_boundary, workspace_run_entries,
+)
+from backend.app.workspace.repository import WorkspaceRepository
 from backend.app.policy.path_evidence import documentation_paths
 from backend.app.passport.cng import CngKey, fingerprint
 from backend.app.passport.jcs import canonicalize
@@ -78,6 +83,8 @@ class PassportV2Issuer:
                 "ORDER BY rowid DESC LIMIT 1", (str(change_id),)).fetchone()
             check_runs = CheckRunRepository(self._database).for_change(
                 change_id, connection=connection)
+            workspaces = WorkspaceRepository(self._database).for_change(
+                change_id, connection=connection)
         if len(journal) > _MAX_JOURNAL_EVENTS or len(launches) > _MAX_LAUNCHES:
             raise AppError("PASSPORT_EVIDENCE_LIMIT", "Too many journal or launch records to bind.",
                            status_code=409)
@@ -99,6 +106,7 @@ class PassportV2Issuer:
             raise AppError("PASSPORT_LAUNCH_INVALID", "Launch records and journal differ.",
                            status_code=409)
         bindings: list[PassportV2LaunchBinding] = []
+        launch_payloads: dict[str, dict[str, object]] = {}
         for row in launches:
             raw = row["payload_json"]
             if not isinstance(raw, str) or len(raw.encode("utf-8")) > _MAX_RECORD_BYTES:
@@ -112,6 +120,7 @@ class PassportV2Issuer:
                     or str(parsed.get("change_id")) != str(change_id)):
                 raise AppError("PASSPORT_LAUNCH_INVALID", "Launch record identity mismatch.",
                                status_code=409)
+            launch_payloads[row["id"]] = parsed
             status = parsed.get("status")
             kinds = set(events[row["id"]])
             if status in {"RUNNING", "PAUSED"}:
@@ -159,8 +168,9 @@ class PassportV2Issuer:
             comparable, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
         diff_claim, diff_limit, changed_paths, measured_percent = self._coverage_claim(
             coverage, coverage_contract_digest)
+        execution_boundary, boundary_limit, launch_boundaries = self._execution_boundary(
+            bindings, launch_payloads, workspaces)
         limitations = [
-            "Execution boundary evidence is not yet structured; UNKNOWN.",
             "Execution-bearing files that run later are not measured; UNKNOWN.",
             "An executed line does not prove an assertion verified behavior.",
             "Offline journal export contains hash links, not event payloads; original event hashes cannot be recomputed offline.",
@@ -169,6 +179,8 @@ class PassportV2Issuer:
             limitations.append("No journal events exist for this Change.")
         if not launches:
             limitations.append("No launch records exist for this Change.")
+        if boundary_limit:
+            limitations.append(boundary_limit)
         if diff_limit:
             limitations.append(diff_limit)
         confined_checks, confined_limit, bound_check_runs = self._confined_checks(
@@ -183,7 +195,8 @@ class PassportV2Issuer:
             contract_digest=contract_digest, journal_head=head,
             journal_event_count=len(journal),
             journal_integrity="PASS" if journal else "UNKNOWN",
-            launch_records=bindings, execution_boundary="UNKNOWN",
+            launch_records=bindings, execution_boundary=execution_boundary,
+            launch_boundaries=launch_boundaries,
             diff_coverage=diff_claim, runs_later="UNKNOWN", limitations=limitations,
             issued_at=utc_now(), product_version=product_version(),
             confined_checks=confined_checks, check_runs=bound_check_runs,
@@ -301,6 +314,24 @@ class PassportV2Issuer:
                                status_code=409)
             previous = calculated
         return previous
+
+    @staticmethod
+    def _execution_boundary(
+        bindings: list[PassportV2LaunchBinding], launches: dict[str, dict[str, object]],
+        workspaces: list[object],
+    ) -> tuple[str, str | None, list[PassportV2LaunchBoundary]]:
+        """The weakest observed launch boundary, from launch rows and workspace run facts."""
+        entries = workspace_run_entries(workspaces)
+        observed = [launch_boundary(binding.run_id, launches[str(binding.run_id)],
+                                    entries.get(str(binding.run_id), ()))
+                    for binding in bindings]
+        claim, reason = change_boundary(observed)
+        bound = [PassportV2LaunchBoundary(run_id=item.run_id, boundary=item.boundary,
+                                          package_sid=item.package_sid)
+                 for item in observed]
+        if claim == "APPCONTAINER":
+            return claim, None, bound
+        return claim, f"Execution boundary {claim}: {reason}.", bound
 
     @staticmethod
     def _confined_checks(journal: list[object], check_runs: list[object]) -> tuple[
