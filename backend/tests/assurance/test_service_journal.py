@@ -156,7 +156,8 @@ def test_supervised_descendants_emit_bounded_process_events(tmp_path, monkeypatc
     child = "import time; time.sleep(0.4)"
     parent = (
         "import subprocess,sys,time; "
-        f"p=subprocess.Popen([sys.executable, '-c', {child!r}]); p.wait()"
+        f"p=subprocess.Popen([sys.executable, '-c', {child!r}]); "
+        "print(p.pid, flush=True); sys.exit(p.wait())"
     )
     run = h.service().launch_agent(
         h.view(),
@@ -165,7 +166,14 @@ def test_supervised_descendants_emit_bounded_process_events(tmp_path, monkeypatc
         ),
     )
 
-    assert len(run.descendant_processes) == 1
+    # Diagnostics for an intermittent CI failure (descendants == 0): surface why
+    # the run ended and which grandchild PID the parent actually spawned.
+    diagnostics = (run.status, run.exit_code, run.stdout, run.stderr,
+                   run.descendant_control_available, run.duration_ms, run.limitations)
+    assert run.status is AgentRunStatus.PASSED, diagnostics
+    assert run.descendant_control_available, diagnostics
+    assert len(run.descendant_processes) == 1, diagnostics
+    assert run.descendant_processes[0].pid == int(run.stdout.split()[0]), diagnostics
     events = h.events()
     assert JournalEventType.AGENT_DESCENDANT_OBSERVED in {event.event_type for event in events}
     assert JournalEventType.AGENT_DESCENDANT_TERMINATED in {event.event_type for event in events}
