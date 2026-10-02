@@ -79,8 +79,9 @@ class WorkspaceService:
         return record_to_contract(self._latest(change_id))
 
     def preview(self, change_id: UUID) -> WorkspaceApplyPreview:
-        self.change_service.get(change_id)
-        return preview_to_contract(self.manager.preview(change_id))
+        change = self.change_service.get(change_id)
+        return preview_to_contract(self.manager.preview(
+            change_id, change.contract.forbidden_paths))
 
     def apply(self, change_id: UUID, request: WorkspaceApplyRequest) -> WorkspaceApplyResult:
         change = self.change_service.get(change_id)
@@ -100,13 +101,15 @@ class WorkspaceService:
             return WorkspaceApplyResult(workspace=record_to_contract(record), applied=True)
         self._authorize(request.actor_id, change, WORKSPACE_APPLY_SCOPE, {
             "risk_level": WORKSPACE_APPLY_RISK, "sealed_sha": record.sealed_sha or ""})
-        updated = self.manager.apply(change_id, request.approval_token)
+        updated = self.manager.apply(change_id, request.approval_token,
+                                     change.contract.forbidden_paths)
         if updated.applied_sha and updated.state in (WorkspaceState.APPLIED,
                                                      WorkspaceState.CLEANED):
             return WorkspaceApplyResult(workspace=record_to_contract(updated), applied=True)
         preview: WorkspaceApplyPreview | None = None
         try:
-            preview = preview_to_contract(self.manager.inspect(change_id))
+            preview = preview_to_contract(self.manager.inspect(
+                change_id, change.contract.forbidden_paths))
         except AppError:
             preview = None  # the refusal itself is still reported on the workspace
         return WorkspaceApplyResult(

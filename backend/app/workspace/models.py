@@ -35,6 +35,8 @@ class ApplyRefusal(StrEnum):
     CREDENTIAL_IN_DIFF = "CREDENTIAL_IN_DIFF"
     # A credential was staged and the diff is too large to scan completely (fail closed).
     DIFF_TOO_LARGE_TO_SCAN = "DIFF_TOO_LARGE_TO_SCAN"
+    # The sealed diff adds, changes, deletes or renames a Change Contract forbidden path.
+    FORBIDDEN_PATH_IN_DIFF = "FORBIDDEN_PATH_IN_DIFF"
 
 
 # Preview bounds (threat T-01-25: excess is reported as truncated, never loaded).
@@ -44,6 +46,7 @@ PREVIEW_COMMIT_LIMIT = 256
 SECRET_SCAN_LIMIT = 8 * 1_048_576
 # Path flag of a changed path that carries staged-credential material.
 CREDENTIAL_FLAG = "credential"
+FORBIDDEN_FLAG = "forbidden"
 
 SYMLINK_MODE = "120000"
 GITLINK_MODE = "160000"

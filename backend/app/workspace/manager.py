@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+from backend.app.assurance.deviations import matches_any
 from backend.app.contracts.models import JournalEventType, WorkspaceState, utc_now
 from backend.app.core.database import Database
 from backend.app.core.errors import AppError
@@ -77,6 +78,7 @@ from backend.app.workspace.errors import (
 )
 from backend.app.workspace.models import (
     CREDENTIAL_FLAG,
+    FORBIDDEN_FLAG,
     PREVIEW_COMMIT_LIMIT,
     PREVIEW_PATCH_LIMIT,
     SECRET_SCAN_LIMIT,
@@ -120,6 +122,8 @@ CREDENTIAL_IN_DIFF_LIMITATION = (
 DIFF_TOO_LARGE_TO_SCAN_LIMITATION = (
     "The workspace changes are larger than Sentinel scans for the staged model credential "
     f"({SECRET_SCAN_LIMIT // 1_048_576} MiB); apply-back is refused rather than applied unscanned.")
+FORBIDDEN_PATH_LIMITATION = (
+    "The workspace changes touch a path the Change Contract forbids; apply-back is refused.")
 
 
 def _digest(token: str) -> str:
@@ -873,7 +877,7 @@ class WorkspaceManager:
             return ApplyRefusal.USER_BRANCH_MOVED
         return None
 
-    def preview(self, change_id: UUID) -> ApplyPreview:
+    def preview(self, change_id: UUID, forbidden_paths: Sequence[str] = ()) -> ApplyPreview:
         """Seal the workspace and describe what apply-back would land.
 
         The user repository is only read (branch and HEAD); nothing is fetched
@@ -897,7 +901,7 @@ class WorkspaceManager:
             if exc.code.startswith("WORKSPACE_"):
                 raise
             raise workspace_seal_failed("Git failed while sealing") from exc
-        refusal, assessed = self._assess(record, change_id, base, sealed)
+        refusal, assessed = self._assess(record, change_id, base, sealed, forbidden_paths)
         token: str | None = None
         # A new seal (first preview, or content that changed since the last one) is journaled.
         sealed_event = (JournalEventType.WORKSPACE_SEALED
@@ -924,8 +928,26 @@ class WorkspaceManager:
         return replace(assessed, approval_token=token, limitations=tuple(dict.fromkeys(
             record.limitations + assessed.limitations)))
 
+    def _forbidden_hits(
+        self, record: WorkspaceRecord, base: str, sealed: str, patterns: Sequence[str],
+    ) -> tuple[str, ...]:
+        """Paths of ``base..sealed`` matching a forbidden pattern, renames as delete + add.
+
+        Fails closed: a diff Git cannot list completely raises instead of passing.
+        """
+
+        if not patterns:
+            return ()
+        listed = self._ws_git(record, ["diff", "--no-renames", "--name-only", "-z",
+                                       base, sealed, "--"])
+        if listed.returncode != 0 or listed.truncated:
+            raise workspace_seal_failed("Git could not list the sealed diff")
+        names = listed.stdout.decode("utf-8", errors="surrogateescape").split("\0")
+        return tuple(name for name in names if name and matches_any(name, list(patterns)))
+
     def _assess(
         self, record: WorkspaceRecord, change_id: UUID, base: str, sealed: str,
+        forbidden_paths: Sequence[str] = (),
     ) -> tuple[ApplyRefusal | None, ApplyPreview]:
         """(refusal, token-less preview) of ``base..sealed``: shared by preview and inspect.
 
@@ -939,6 +961,7 @@ class WorkspaceManager:
             diverged, commits, commits_truncated, changed, patch, patch_truncated, blobs = (
                 self._describe(record, base, sealed))
             scan_refusal, flagged = self._scan_for_credentials(record, base, sealed, blobs)
+            forbidden = self._forbidden_hits(record, base, sealed, forbidden_paths)
         except AppError as exc:
             if exc.code.startswith("WORKSPACE_"):
                 raise
@@ -950,15 +973,19 @@ class WorkspaceManager:
             extra.append(CREDENTIAL_IN_DIFF_LIMITATION)
         elif scan_refusal is ApplyRefusal.DIFF_TOO_LARGE_TO_SCAN:
             extra.append(DIFF_TOO_LARGE_TO_SCAN_LIMITATION)
-        if flagged:
+        if forbidden:
+            extra.append(FORBIDDEN_PATH_LIMITATION)
+        if flagged or forbidden:
             changed = tuple(
                 (status, path, old_mode, new_mode,
-                 flags + ((CREDENTIAL_FLAG,) if path in flagged else ()))
+                 flags + ((CREDENTIAL_FLAG,) if path in flagged else ())
+                 + ((FORBIDDEN_FLAG,) if path in forbidden else ()))
                 for status, path, old_mode, new_mode, flags in changed)
         detached, user_branch, user_head = self._user_state(record.source_repository)
         # A credential-bearing (or unscannable) diff is refused before anything else:
         # the user can fix a moved branch, but never un-leak a sealed secret.
         refusal = (scan_refusal
+                   or (ApplyRefusal.FORBIDDEN_PATH_IN_DIFF if forbidden else None)
                    or (ApplyRefusal.WORKSPACE_HISTORY_DIVERGED if diverged
                        else self._user_refusal(record, detached, user_branch, user_head)))
         return refusal, ApplyPreview(
@@ -971,7 +998,7 @@ class WorkspaceManager:
             limitations=PREVIEW_LIMITATIONS + tuple(extra),
         )
 
-    def inspect(self, change_id: UUID) -> ApplyPreview:
+    def inspect(self, change_id: UUID, forbidden_paths: Sequence[str] = ()) -> ApplyPreview:
         """A read-only preview of the already-sealed commit: no seal, no commit, no token.
 
         Used to explain a refused apply. The recorded refusal reason wins over a
@@ -984,7 +1011,8 @@ class WorkspaceManager:
             raise workspace_state_conflict(record.state.value, "inspect")
         self._validate_workspace_git(record)
         base = record.base_sha or ""
-        refusal, assessed = self._assess(record, change_id, base, record.sealed_sha)
+        refusal, assessed = self._assess(record, change_id, base, record.sealed_sha,
+                                         forbidden_paths)
         reason = record.refusal_reason or (refusal.value if refusal else None)
         return replace(
             assessed, approval_token=None, refusal_reason=reason,
@@ -1021,7 +1049,8 @@ class WorkspaceManager:
                 and bool(record.approval_digest)
                 and hmac.compare_digest(_digest(approval_token), record.approval_digest or ""))
 
-    def apply(self, change_id: UUID, approval_token: str) -> WorkspaceRecord:
+    def apply(self, change_id: UUID, approval_token: str,
+              forbidden_paths: Sequence[str] = ()) -> WorkspaceRecord:
         """Fast-forward the user's branch to the approved sealed commit, or refuse.
 
         Idempotent: replaying the approved token after success returns the
@@ -1076,6 +1105,14 @@ class WorkspaceManager:
         if (ws_head.returncode != 0 or _text(ws_head) != record.sealed_sha
                 or ws_status.returncode != 0 or ws_status.stdout.strip()):
             return self._refuse(record, ApplyRefusal.SEALED_COMMIT_MISMATCH)
+        # The contract may have gained forbidden paths since the preview was approved.
+        try:
+            forbidden = self._forbidden_hits(record, record.base_sha or "", record.sealed_sha,
+                                             forbidden_paths)
+        except AppError as exc:
+            raise workspace_apply_failed("the sealed diff could not be listed") from exc
+        if forbidden:
+            return self._refuse(record, ApplyRefusal.FORBIDDEN_PATH_IN_DIFF)
 
         # Read-only checks against the user repository come before any fetch.
         detached, branch, head = self._user_state(source)
