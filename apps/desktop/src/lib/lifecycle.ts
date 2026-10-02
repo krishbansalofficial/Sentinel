@@ -27,8 +27,8 @@ export const ALLOWED_TRANSITIONS: Record<S, readonly S[]> = {
 export const GUARDS: Partial<Record<S, readonly string[]>> = {
   ACTIVE: ["repository_valid", "contract_present", "authority_valid"],
   LOCALLY_VERIFIED: ["required_assurance_passed", "assurance_fresh"],
-  REVIEW_READY: ["deviations_resolved", "required_evidence_complete"],
-  PR_OPEN: ["pull_request_recorded"],
+  REVIEW_READY: ["deviations_resolved", "required_evidence_complete", "preset_allowed"],
+  PR_OPEN: ["pull_request_recorded", "preset_allowed"],
   CI_VERIFIED: ["ci_passed_for_current_head"],
   ARTIFACT_BUILT: ["artifact_recorded"],
   DEPLOYED: ["deployment_recorded"],
@@ -52,6 +52,7 @@ const GUARD_TEXT: Record<string, string> = {
   deviations_resolved: "No unresolved deviations",
   required_evidence_complete: "Required evidence is complete",
   pull_request_recorded: "A pull request outcome is recorded",
+  preset_allowed: "The selected policy preset decides ALLOW on current evidence",
   ci_passed_for_current_head: "CI passed for the current head commit",
   artifact_recorded: "An artifact outcome is recorded",
   deployment_recorded: "A deployment outcome is recorded",

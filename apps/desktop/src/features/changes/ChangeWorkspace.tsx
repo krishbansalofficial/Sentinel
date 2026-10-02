@@ -60,6 +60,7 @@ export function ChangeWorkspace() {
     { to: "/changes/$changeId/evidence", label: "Evidence" },
     { to: "/changes/$changeId/assurance", label: "Assurance" },
     { to: "/changes/$changeId/agents", label: "Agents" },
+    { to: "/changes/$changeId/apply", label: "Apply-back" },
     { to: "/changes/$changeId/delivery", label: "Delivery" },
     { to: "/changes/$changeId/authority", label: "Authority" },
     { to: "/changes/$changeId/recovery", label: "Recovery" },
