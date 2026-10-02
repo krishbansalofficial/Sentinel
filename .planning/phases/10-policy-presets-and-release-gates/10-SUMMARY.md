@@ -22,3 +22,10 @@ The full local suite on `e4c6faa` completed **1,435 passed, 7 skipped, 0 failed,
 - Signed Passport `execution_boundary` and `confined_checks` remain `UNKNOWN` until structured facts from Claude-owned execution and verification phases are available.
 - Phase 6 N3-01 independent re-review remains requested. The user chose exact-line coverage credit and `UNKNOWN` for unreported continuation lines in N3-02.
 - The user has not chosen a license. The README stash `stash@{0}` was neither applied nor dropped.
+
+## Follow-up status (2026-10-02)
+
+- Preset gate: enforced. `preset_allowed` guards `REVIEW_READY` and `PR_OPEN` on a current `ALLOW` from the Passport v2 snapshot; a Change without a preset is not gated (`5721277`). Apply-back also refuses contract-forbidden paths at preview and at apply (`81bf226`).
+- Hosted CI: green on Python 3.12 and 3.14 (runs 37026832195 and 37063210824) after the check-runtime ACL fixture reset (`2386c20`). The intermittent supervised-descendant failure was not reproduced locally in 120 runs; its test now reports run status, output and the expected descendant PID on failure (`0e92388`).
+- Execution boundary: bound. Passport v2 records each launch's boundary from verified workspace run facts and claims the weakest (`879148a`..`79d0ab8`); `confined_checks` is computed from every check run of the Change (Phase 5 D2). Earlier v2 bundles still verify.
+- Still open: the Phase 6 N3-01 independent re-review, and the license choice.

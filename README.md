@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/platform-Windows-1f2937.svg" alt="Windows">
   <img src="https://img.shields.io/badge/status-pre--release-b7791f.svg" alt="Pre-release">
   <img src="https://img.shields.io/badge/version-0.1.0-2563eb.svg" alt="Version 0.1.0">
-  <img src="https://img.shields.io/badge/tests-1%2C600%2B-2f855a.svg" alt="1,600+ tests">
+  <img src="https://img.shields.io/badge/tests-2%2C200%2B-2f855a.svg" alt="2,200+ tests">
   <img src="https://img.shields.io/badge/threat--model-16%2F16%20reviewed-2f855a.svg" alt="16/16 threat-model findings reviewed">
 </p>
 
@@ -100,7 +100,11 @@ did doesn't depend on trusting the agent's account of itself.
   held in Windows CNG (the TPM-backed Platform Crypto Provider when available) and never exported
   by Sentinel. It ships as a self-contained `change-<id>.sentinel` bundle with an HTML/SVG card,
   verifiable offline with `sentinel verify` against signers you trust by fingerprint, with key
-  rotation and local revocation. Passport v1 (Ed25519) bundles still verify.
+  rotation and local revocation. Passport v1 (Ed25519) bundles still verify. The signed claims
+  include the agent's observed execution boundary (`APPCONTAINER` only when every launch's
+  recorded token facts verify), and a pinned-fingerprint verifier that needs no Windows APIs
+  (`python -m backend.app.passport.portable_verify`, or the `verify-passport` GitHub Action)
+  checks a bundle on any CI runner.
 - **Preview a recovery plan** before anything happens, and execute it only after a human types an
   approval phrase tied to that specific plan, on a dedicated branch that never touches your
   current one.
@@ -169,10 +173,10 @@ implement typed ports against that contract and are wired together in a single c
 | Execution | AppContainer and restricted-token launchers, Job Object supervision, per-agent runtime profiles, the confined check box, and the content-addressed runtime cache |
 | Workspace | Sentinel-owned workspace clones, sealing, preview, hardened apply-back, and crash-safe sweeps |
 | Git | A hardened Git harness for every Sentinel Git call (hooks, filters, fsmonitor, and external drivers neutralized), checkpoints, and non-destructive recovery |
-| Assurance | Assurance plans, diff-linked coverage mapping, freshness, and policy presets |
+| Assurance and policy | Assurance plans, diff-linked coverage mapping, freshness, policy presets and their lifecycle gate, and the repository contract read from the baseline commit |
 | Identity and credentials | Actors, delegations, the default-deny policy engine, and the credential broker over Windows Credential Manager |
-| Providers | GitHub pull requests, the GitHub App manifest flow, Check Runs, and commit statuses |
-| Passport | v1 Ed25519 and v2 CNG ES256 issuers, the portable bundle, the trust registry, and the offline verifier |
+| Providers | GitHub pull requests, the GitHub App manifest flow, Check Runs, and commit statuses; GitLab commit statuses for CI outcomes |
+| Passport | v1 Ed25519 and v2 CNG ES256 issuers, the bound execution boundary, the portable bundle, the trust registry, and the offline and portable verifiers |
 
 ## Interfaces
 
@@ -182,14 +186,18 @@ operations across 81 routes, described by 142 typed schemas.
 - **Backend** (`backend/app`) — a local FastAPI service and the single source of truth. SQLite in
   WAL mode, bearer-token authenticated, loopback by default.
 - **CLI** (`backend/app/cli`) — scriptable access to every operation, for automation and CI,
-  including `sentinel workspace`, `sentinel checks`, `sentinel passport export`,
+  including `sentinel run` (the whole workflow in one command), `sentinel workspace`,
+  `sentinel checks`, `sentinel change contract-load`, `sentinel passport export`,
   `sentinel verify`, `sentinel trust`, and `sentinel github`.
 - **Terminal UI** (`backend/app/tui`, built with [Textual](https://textual.textualize.io/)) —
   full-screen control: evidence, agent runs (with live output and pause/resume), a branch/fork
   tree for checkpoint forking, passport, recovery, delegation, tool trust, and the event timeline.
 - **Desktop app** (`apps/desktop`, Electron + React) — a native Windows shell over the same API;
   contextually isolated, sandboxed, with the API token owned by the main process and never
-  exposed to the renderer.
+  exposed to the renderer. Each Change has tabs for its contract (including loading the committed
+  repository contract), evidence, assurance, agents, apply-back of the AppContainer workspace,
+  delivery, authority, recovery, Passport (v1 and v2 with the execution boundary) and the
+  timeline; GitHub and GitLab connections live on the GitHub page.
 
 ## Security posture
 
@@ -207,7 +215,11 @@ A few of the load-bearing decisions:
   package scripts run in a disposable check box, never at your full authority, and each run records
   the boundary it actually ran under.
 - **Changes come back on your terms.** Workspace results are applied with a hardened fetch and a
-  fast-forward-only merge after a preview; Sentinel never force-updates your branch.
+  fast-forward-only merge after a preview; Sentinel never force-updates your branch, and a diff
+  that touches a contract-forbidden path is refused at preview and again at apply.
+- **Policy an agent can't loosen.** A repository contract is read from the baseline commit, never
+  the working tree the agent controls, and a selected policy preset must decide `ALLOW` before a
+  Change becomes review-ready or opens a pull request.
 - **No unrestricted authority by default.** Minting a credential grant requires a delegation that
   actually covers the requested scope and Change — not just a check that the target actor exists.
 - **Keys that can't be lifted out by Sentinel.** Passport v2 keys are generated in Windows CNG
