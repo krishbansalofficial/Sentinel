@@ -16,7 +16,7 @@ from uuid import UUID
 
 from backend.app.contracts.models import PassportV2Payload
 from backend.app.passport.card import render_html, render_svg
-from backend.app.passport.cng import fingerprint, verify_signature
+from backend.app.passport.es256 import fingerprint, verify_signature
 from backend.app.passport.format import (
     MAX_BUNDLE_BYTES, MAX_MEMBER_BYTES, serialize_archive,
 )

@@ -6,7 +6,6 @@ Private-key generation, persistence and signing remain inside the selected KSP.
 
 from __future__ import annotations
 
-import base64
 import ctypes
 import hashlib
 import os
@@ -17,9 +16,11 @@ from dataclasses import dataclass
 from typing import Iterator
 from uuid import UUID
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec, utils
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+
+# Re-exported: verification is portable and lives in es256.
+from backend.app.passport.es256 import fingerprint, verify_signature  # noqa: F401
 
 PLATFORM_PROVIDER = "Microsoft Platform Crypto Provider"
 SOFTWARE_PROVIDER = "Microsoft Software Key Storage Provider"
@@ -341,30 +342,3 @@ class CngKey:
 
 def _provider_label(name: str) -> str:
     return "TPM" if name == PLATFORM_PROVIDER else "SOFTWARE"
-
-
-def fingerprint(spki: bytes) -> str:
-    """Grouped base32 SHA-256 of the canonical DER SubjectPublicKeyInfo."""
-    public = serialization.load_der_public_key(spki)
-    if not isinstance(public, ec.EllipticCurvePublicKey) or not isinstance(public.curve, ec.SECP256R1):
-        raise ValueError("Fingerprint requires an ES256 SPKI")
-    canonical = public.public_bytes(serialization.Encoding.DER,
-                                    serialization.PublicFormat.SubjectPublicKeyInfo)
-    encoded = base64.b32encode(hashlib.sha256(canonical).digest()).decode("ascii").rstrip("=")
-    return "-".join(encoded[index:index + 8] for index in range(0, len(encoded), 8))
-
-
-def verify_signature(*, spki: bytes, message: bytes, signature: bytes) -> bool:
-    """Verify an ES256 raw signature using only the public SPKI."""
-    try:
-        public = serialization.load_der_public_key(spki)
-        if not isinstance(public, ec.EllipticCurvePublicKey) or not isinstance(public.curve, ec.SECP256R1):
-            return False
-        if len(signature) != 64:
-            return False
-        der = utils.encode_dss_signature(int.from_bytes(signature[:32], "big"),
-                                         int.from_bytes(signature[32:], "big"))
-        public.verify(der, message, ec.ECDSA(hashes.SHA256()))
-        return True
-    except (ValueError, InvalidSignature):
-        return False
