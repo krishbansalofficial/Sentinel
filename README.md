@@ -83,6 +83,9 @@ did doesn't depend on trusting the agent's account of itself.
 - **Measure diff-linked assurance.** For Python, Sentinel maps coverage.py execution data onto the
   exact tested diff and reports, as separate claims, whether checks passed, whether tests executed
   the changed lines, and whether that result is fresh for the current repository state.
+  JavaScript measurement has its first layer (Node V8 coverage mapped conservatively onto lines);
+  JavaScript changes are still reported as an unsupported language until confined Node
+  collection is wired into the claim.
 - **Apply versioned policy presets** — `strict`, `standard`, and `docs-only` — that evaluate the
   persisted evidence and name every unmet requirement. A selected preset must decide `ALLOW`
   before a Change can become review-ready or open a pull request, and apply-back refuses any
