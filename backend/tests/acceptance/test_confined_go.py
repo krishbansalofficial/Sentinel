@@ -19,7 +19,14 @@ from backend.tests.acceptance.test_confined_checks import (  # noqa: F401 (fixtu
 from backend.tests.support_kb import make_repo
 
 GO = shutil.which("go")
-pytestmark = pytest.mark.skipif(GO is None or os.name != "nt", reason="Go on Windows is required")
+pytestmark = [
+    pytest.mark.skipif(GO is None or os.name != "nt", reason="Go on Windows is required"),
+    # Like the other real-boundary tests: hosted Windows runners deny an AppContainer the NUL
+    # device (Go needs it for build IDs), so these run locally or with the opt-in variable.
+    pytest.mark.skipif(os.environ.get("GITHUB_ACTIONS") == "true"
+                       and os.environ.get("SENTINEL_CI_REAL_APPCONTAINER") != "1",
+                       reason="hosted runners cannot host real AppContainer boundary tests"),
+]
 
 GO_MOD = "module example.com/calc\n\ngo 1.21\n"
 CALC = "package calc\n\nfunc Add(a, b int) int { return a + b }\n"
