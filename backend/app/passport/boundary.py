@@ -53,7 +53,17 @@ def _verified_facts(facts: Any, package_sid: str | None) -> bool:
     return (verified_token_facts(facts)
             and str(facts.get("integrity_rid", "")).lower() == LOW_INTEGRITY_RID
             and isinstance(facts.get("package_sid"), str)
-            and package_sid is not None and facts["package_sid"] == package_sid)
+            and package_sid is not None and facts["package_sid"] == package_sid
+            and isinstance(facts.get("capability_sids", []), list)
+            and all(isinstance(sid, str) for sid in facts.get("capability_sids", [])))
+
+
+def _rendered_authority(facts: Mapping[str, Any]) -> str | None:
+    """The authority text these facts produce; None when they cannot be rendered."""
+    try:
+        return appcontainer_authority(SimpleNamespace(**facts))
+    except (TypeError, ValueError):
+        return None
 
 
 def launch_boundary(run_id: UUID, launch: Mapping[str, Any],
@@ -77,8 +87,8 @@ def launch_boundary(run_id: UUID, launch: Mapping[str, Any],
         if not _verified_facts(facts, package_sid):
             return LaunchBoundary(run_id, UNKNOWN, None,
                                   "the workspace run's boundary facts did not verify")
-        if (not isinstance(authority, str)
-                or authority != appcontainer_authority(SimpleNamespace(**facts))):
+        expected = _rendered_authority(facts)
+        if not isinstance(authority, str) or expected is None or authority != expected:
             return LaunchBoundary(run_id, UNKNOWN, None,
                                   "the launch record does not match its boundary facts")
         return LaunchBoundary(run_id, APPCONTAINER, facts["package_sid"], None)

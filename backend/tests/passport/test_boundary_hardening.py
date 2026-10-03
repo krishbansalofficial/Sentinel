@@ -45,6 +45,11 @@ from backend.tests.passport.test_verify import _rewrite
     {**_facts(), "package_sid": None},
     {**_facts(), "is_appcontainer": "true"},  # truthy string is not a verified fact
     {**_facts(), "job_verified": 1},
+    # Found by fuzzing: a non-list capability_sids used to raise TypeError.
+    {**_facts(), "capability_sids": 0},
+    {**_facts(), "capability_sids": False},
+    {**_facts(), "capability_sids": "S-1-15-3-1"},
+    {**_facts(), "capability_sids": [1]},
 ])
 def test_malformed_facts_never_crash_or_claim_appcontainer(facts) -> None:
     run_id = uuid4()
@@ -143,6 +148,20 @@ def test_tampered_workspace_facts_after_launch_drop_the_claim(tmp_path) -> None:
         connection.execute("UPDATE change_workspaces SET payload_json = ? WHERE id = ?",
                            (json.dumps(payload), row["id"]))
     assert PassportV2Issuer(database).snapshot(change.id).execution_boundary == "UNKNOWN"
+
+
+def test_corrupt_capability_facts_never_crash_issuance(tmp_path) -> None:
+    database = _database(tmp_path)
+    change = _seed_change(database)
+    _seed_appcontainer_launch(database, change.id, facts=_facts())
+    with database.connection() as connection:
+        row = connection.execute("SELECT id, payload_json FROM change_workspaces").fetchone()
+        payload = json.loads(row["payload_json"])
+        payload["runs"][0]["facts"]["capability_sids"] = 0
+        connection.execute("UPDATE change_workspaces SET payload_json = ? WHERE id = ?",
+                           (json.dumps(payload), row["id"]))
+    snapshot = PassportV2Issuer(database).snapshot(change.id)
+    assert snapshot.execution_boundary == "UNKNOWN"
 
 
 def test_no_launches_is_unknown_with_a_limitation(tmp_path) -> None:
