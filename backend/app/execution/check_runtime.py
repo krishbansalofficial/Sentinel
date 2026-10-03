@@ -691,6 +691,22 @@ def node_runtime(
                      ignore=frozenset(), size_limit=size_limit)
 
 
+def go_runtime(
+    go_exe: str | Path, *, root: str | Path | None = None,
+    size_limit: int = DEFAULT_SIZE_LIMIT_BYTES,
+) -> RuntimeSnapshot:
+    """The whole ``GOROOT`` of ``go.exe`` (``<GOROOT>/bin/go.exe``): toolchain plus std sources."""
+
+    go = Path(go_exe)
+    if not go.is_absolute() or not go.is_file():
+        raise check_runtime_failed("go", "go must be an absolute file path")
+    goroot = go.parent.parent
+    if go.parent.name.lower() != "bin" or not (goroot / "src").is_dir() or not (goroot / "pkg" / "tool").is_dir():
+        raise check_runtime_failed("go", "go.exe is not inside a GOROOT with src and pkg/tool")
+    return _snapshot([("", goroot)], kind="go", root=None if root is None else Path(root),
+                     ignore=frozenset(), size_limit=size_limit)
+
+
 def node_modules_snapshot(
     repo_root: str | Path, *, root: str | Path | None = None,
     size_limit: int = DEFAULT_SIZE_LIMIT_BYTES,

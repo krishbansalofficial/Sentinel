@@ -12,7 +12,11 @@ or to a refusal:
   ``yarn`` are the JS entry inside the project's ``node_modules`` snapshot.
   A ``.cmd`` shim is never run (it needs ``cmd.exe``). A missing entry is
   ``CHECK_RUNTIME_UNAVAILABLE``; Sentinel never falls back to the host.
-- ``uv``, ``cargo``, ``go``, ``dotnet`` and anything else have no confined
+- ``go`` runs the snapshot of the host's whole ``GOROOT`` with its build cache
+  and GOPATH in the box's scratch, offline (``GOPROXY=off``), local toolchain
+  only, without cgo: a module whose dependencies are not vendored or already
+  in the module is refused by Go itself rather than fetched.
+- ``uv``, ``cargo``, ``dotnet`` and anything else have no confined
   runtime: ``CHECK_TOOLCHAIN_UNCONFINED`` (409). They run only on the existing
   restricted path, and only for an actor holding the ``checks.unconfined``
   delegation for that Change; such a run is recorded with boundary
@@ -33,6 +37,7 @@ from backend.app.execution.check_runtime import (
     PythonRuntime,
     RuntimeSnapshot,
     node_modules_snapshot,
+    go_runtime,
     node_runtime,
     python_runtime,
 )
@@ -44,6 +49,7 @@ BOUNDARY_UNCONFINED = "UNCONFINED"
 
 PYTHON_TOOLCHAIN = "python"
 NODE_TOOLCHAIN = "node"
+GO_TOOLCHAIN = "go"
 
 # Allowlisted name -> confined toolchain.
 CONFINED_TOOLCHAINS: dict[str, str] = {
@@ -57,9 +63,10 @@ CONFINED_TOOLCHAINS: dict[str, str] = {
     "pnpm.cmd": NODE_TOOLCHAIN,
     "yarn": NODE_TOOLCHAIN,
     "yarn.cmd": NODE_TOOLCHAIN,
+    "go": GO_TOOLCHAIN,
 }
 # Allowlisted, but with no confined runtime (opt-in only).
-UNCONFINED_TOOLCHAINS = frozenset({"uv", "cargo", "go", "dotnet"})
+UNCONFINED_TOOLCHAINS = frozenset({"uv", "cargo", "dotnet"})
 ALLOWED_EXECUTABLES = frozenset(CONFINED_TOOLCHAINS) | UNCONFINED_TOOLCHAINS
 
 # JS entry points, relative to the snapshot that holds them.
@@ -112,6 +119,12 @@ class ResolvedCheckRuntime:
     argv_prefix: tuple[str, ...]
 
 
+def _find_host_tool(name: str, source_root: Path | None) -> Path | None:
+    root = (Path(source_root).resolve() if source_root is not None
+            else Path(sys.executable).resolve())
+    return find_executable(name, minimal_environment(), root)
+
+
 def _find_host_node(source_root: Path | None) -> Path | None:
     # Without a repository there is nothing to exclude; a file is never a PATH parent.
     root = (Path(source_root).resolve() if source_root is not None
@@ -127,6 +140,8 @@ class RuntimeBuilders:
     node: Callable[[Path], RuntimeSnapshot] = node_runtime
     node_modules: Callable[[Path], RuntimeSnapshot | None] = node_modules_snapshot
     find_node: Callable[[Path | None], Path | None] = _find_host_node
+    go: Callable[[Path], RuntimeSnapshot] = go_runtime
+    find_go: Callable[[Path | None], Path | None] = lambda root: _find_host_tool("go", root)
 
     @classmethod
     def for_root(cls, root: str | Path | None) -> RuntimeBuilders:
@@ -139,6 +154,7 @@ class RuntimeBuilders:
             python=lambda interpreter: python_runtime(interpreter, root=cache),
             node=lambda node: node_runtime(node, root=cache),
             node_modules=lambda repo: node_modules_snapshot(repo, root=cache),
+            go=lambda go: go_runtime(go, root=cache),
         )
 
 
@@ -168,6 +184,8 @@ def resolve_check_runtime(
         python = str(runtime.executable)
         prefix = (python, "-m", "pytest") if executable == "pytest" else (python,)
         return ResolvedCheckRuntime(toolchain, runtime, prefix)
+    if toolchain == GO_TOOLCHAIN:
+        return _go_runtime(executable, source_root, builders)
 
     source = Path(source_root) if source_root is not None else None
     host_node = builders.find_node(source)
@@ -207,3 +225,26 @@ def resolve_check_runtime(
             return ResolvedCheckRuntime(toolchain, runtime, (str(node_exe), str(entry)))
     raise check_runtime_unavailable(
         executable, f"node_modules has no {base} JS entry point")
+
+
+# Go in a box: offline, the snapshot toolchain only, caches in the box's scratch.
+GO_BOX_ENV = {
+    "GOTOOLCHAIN": "local", "GOPROXY": "off", "GOSUMDB": "off", "GOTELEMETRY": "off",
+    "CGO_ENABLED": "0", "GOWORK": "off", "GOFLAGS": "-mod=readonly",
+}
+GO_SCRATCH_ENV = {"GOCACHE": "go-cache", "GOPATH": "go-path", "GOTMPDIR": "go-tmp"}
+
+
+def _go_runtime(executable: str, source_root: str | Path | None,
+                builders: RuntimeBuilders) -> ResolvedCheckRuntime:
+    host_go = builders.find_go(Path(source_root) if source_root is not None else None)
+    if host_go is None:
+        raise check_runtime_unavailable(executable, "go was not found outside the repository")
+    goroot = builders.go(Path(host_go))
+    go_exe = goroot.path / "bin" / Path(host_go).name
+    runtime = BoxRuntime(
+        snapshots=(goroot,), env={**GO_BOX_ENV, "GOROOT": str(goroot.path)},
+        path_entries=(goroot.path / "bin",), executable=go_exe, scratch_env=GO_SCRATCH_ENV,
+        limitations=("Go runs offline: module dependencies must be vendored or already in the "
+                     "module cache inside the box; cgo is disabled.",))
+    return ResolvedCheckRuntime(GO_TOOLCHAIN, runtime, (str(go_exe),))

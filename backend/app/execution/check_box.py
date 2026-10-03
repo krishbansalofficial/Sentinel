@@ -478,12 +478,21 @@ class BoxRuntime:
     path_entries: tuple[Path, ...] = ()
     executable: Path | None = None
     limitations: tuple[str, ...] = ()
+    # name -> subfolder of the box's scratch: created per box, the variable is set
+    # to its absolute path (tool caches that must be writable inside the box).
+    scratch_env: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        reserved = [key for key in self.env if key.upper() in _RESERVED_ENV_KEYS]
+        reserved = [key for key in (*self.env, *self.scratch_env)
+                    if key.upper() in _RESERVED_ENV_KEYS]
         if reserved:
             raise ValueError(f"a box runtime may not set {sorted(reserved)}")
+        for folder in self.scratch_env.values():
+            if (not folder or "/" in folder or "\\" in folder or ":" in folder
+                    or folder in (".", "..")):
+                raise ValueError(f"a scratch folder must be one plain name: {folder!r}")
         object.__setattr__(self, "env", MappingProxyType(dict(self.env)))
+        object.__setattr__(self, "scratch_env", MappingProxyType(dict(self.scratch_env)))
         object.__setattr__(self, "snapshots", tuple(self.snapshots))
         object.__setattr__(self, "path_entries", tuple(Path(p) for p in self.path_entries))
 
@@ -947,6 +956,10 @@ class CheckBox:
         env = dict(platform.base_environment(self.container,
                                              path_entries=self._runtime.path_entries))
         env.update(self._runtime.env)
+        for name, folder in self._runtime.scratch_env.items():
+            target = self.scratch / folder
+            target.mkdir(exist_ok=True)
+            env[name] = str(target)
         capabilities = self.capabilities
         record = boxes._save(self._record, self._record.state, state=CheckRunState.RUNNING)
         self._record = record
