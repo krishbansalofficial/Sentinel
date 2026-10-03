@@ -120,7 +120,7 @@ def _seed_appcontainer_launch(database, change_id, *, facts, workspace_sid=PACKA
                    subject_id=run_id, payload={"status": "PASSED", "exit_code": 0})
     WorkspaceRepository(database).insert(WorkspaceRecord(
         id=uuid4(), change_id=change_id, state=WorkspaceState.CLEANED,
-        profile_name="sentinel.ws.test", created_at=now, updated_at=now,
+        profile_name=f"sentinel.ws.test.{uuid4().hex[:12]}", created_at=now, updated_at=now,
         package_sid=workspace_sid,
         runs=({"run_id": str(run_id), "status": "PASSED", "facts": facts,
                "limitations": [], "finished_at": now.isoformat()},)))
