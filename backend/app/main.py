@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from contextlib import asynccontextmanager
 from functools import partial
 from typing import AsyncIterator
@@ -26,6 +27,7 @@ from backend.app.contracts.ports import (
     VerificationPort,
 )
 from backend.app.core.auth import load_or_create_api_token, require_bearer_token
+from backend.app.core.capabilities import unsupported_on_platform
 from backend.app.core.change_repository import ChangeRepository
 from backend.app.core.change_service import ChangeService
 from backend.app.core.config import Settings
@@ -62,7 +64,7 @@ from backend.app.core.runtime_service import (
     RuntimeServices,
 )
 from backend.app.credentials.broker import CredentialBroker
-from backend.app.credentials.windows_store import WindowsCredentialStore
+from backend.app.credentials.selection import select_credential_store
 from backend.app.execution.check_box import CheckBoxes
 from backend.app.execution.check_repository import CheckRunRepository
 from backend.app.execution.launcher import AgentLauncher
@@ -163,7 +165,16 @@ def create_app(
     tool_registry = ToolRegistryService(
         database, journal=journal, signature_checker=check_signature
     )
-    resolved_credential_store = credential_store or WindowsCredentialStore()
+    if credential_store is not None:
+        resolved_credential_store = credential_store
+        credential_store_kind = "injected"
+    else:
+        # Explicit per-platform choice with one startup log line; a store that
+        # cannot open refuses startup instead of falling back to a weaker one.
+        selected_store = select_credential_store(
+            resolved_settings.database_path.parent, logger=LOGGER)
+        resolved_credential_store = selected_store.store
+        credential_store_kind = selected_store.kind
     # ONE broker: it backs the credential/provider services and is the only
     # code that stages (and deletes) an agent's model credential (D-06).
     broker = CredentialBroker(
@@ -327,7 +338,8 @@ def create_app(
 
     @app.get("/api/v1/health", response_model=HealthResponse, tags=["system"])
     def health() -> HealthResponse:
-        return HealthResponse(status="ok", api_version=API_VERSION)
+        return HealthResponse(status="ok", api_version=API_VERSION, platform=sys.platform,
+                              unsupported_capabilities=sorted(unsupported_on_platform()))
 
     @app.get(
         "/api/v1/system/backend-identity", response_model=BackendIdentity, tags=["system"]
@@ -352,6 +364,7 @@ def create_app(
     app.state.check_boxes = check_boxes
     app.state.agent_launcher = agent_launcher
     app.state.credential_broker = broker
+    app.state.credential_store_kind = credential_store_kind
     app.state.api_token = api_token
     app.state.instance_id = uuid4()
     app.state.started_at = utc_now()

@@ -1,3 +1,4 @@
+import sys
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
@@ -69,7 +70,12 @@ def test_change_refresh_and_verify_flow(tmp_path) -> None:
     with build_client(tmp_path) as client:
         health = client.get("/api/v1/health")
         assert health.status_code == 200
-        assert health.json() == {"status": "ok", "api_version": "1"}
+        body = health.json()
+        assert {key: body[key] for key in ("status", "api_version")} == {
+            "status": "ok", "api_version": "1"}
+        assert body["platform"] == sys.platform
+        assert body["unsupported_capabilities"] == (
+            [] if sys.platform == "win32" else ["process_supervisor"])
 
         created = client.post(
             "/api/v1/changes",

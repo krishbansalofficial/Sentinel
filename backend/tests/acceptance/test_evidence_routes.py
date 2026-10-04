@@ -8,9 +8,11 @@ restart safety. Only the credential store is in-memory.
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.core.config import Settings
@@ -66,7 +68,9 @@ def test_capabilities_report_the_kb_stream_as_available(tmp_path):
     assert items["replay"]["state"] == "AVAILABLE"
     assert items["event_journal"]["state"] == "AVAILABLE"
     assert items["tool_registry"]["state"] == "AVAILABLE"
-    assert items["process_supervisor"]["state"] == "AVAILABLE"
+    # Job Objects are Windows-only; elsewhere the capability is honestly UNSUPPORTED.
+    assert items["process_supervisor"]["state"] == (
+        "AVAILABLE" if sys.platform == "win32" else "UNSUPPORTED")
     assert "not a sandbox" in " ".join(items["process_supervisor"]["limitations"])
 
 
@@ -324,6 +328,7 @@ def test_stale_evidence_blocks_local_verification_transition(tmp_path):
     assert "assurance_fresh" in blocked.text or "required_assurance_passed" in blocked.text
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="pause/resume uses Windows process suspension; the Linux cgroup freezer is Phase 1")
 def test_pause_and_resume_a_running_agent_over_the_api(tmp_path):
     """Part A over the real HTTP API: pause a real running top-level agent
     process, prove its output stops growing while suspended, resume it, and

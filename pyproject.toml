@@ -14,6 +14,8 @@ dependencies = [
   "typer==0.27.2",
   "rich==14.3.4",
   "cryptography==47.0.0",
+  # macOS keeps provider credentials in the Keychain through keyring (the default store there).
+  "keyring==25.7.0; sys_platform == 'darwin'",
 ]
 
 [project.scripts]
@@ -27,6 +29,11 @@ test = [
 ]
 tui = [
   "textual==0.89.1",
+]
+# Opt-in on Linux: SENTINEL_CREDENTIAL_STORE=keyring uses the Secret Service instead of
+# the weaker owner-only file store.
+keyring = [
+  "keyring==25.7.0",
 ]
 
 [tool.setuptools.packages.find]

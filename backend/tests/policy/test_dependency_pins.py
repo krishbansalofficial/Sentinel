@@ -22,4 +22,6 @@ def test_runtime_and_test_dependencies_are_exactly_pinned() -> None:
             assert len(requirement.specifier) == 1, declared
             pin = next(iter(requirement.specifier))
             assert pin.operator == "==" and "*" not in pin.version, declared
+            if requirement.marker is not None and not requirement.marker.evaluate():
+                continue  # e.g. keyring on darwin only: not installable here
             assert version(requirement.name) == pin.version, declared
