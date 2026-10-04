@@ -1122,6 +1122,11 @@ class AssuranceRunListResponse(ContractModel):
 class HealthResponse(ContractModel):
     status: str
     api_version: str
+    # Additive: the backend's platform (``sys.platform``) and the capability ids
+    # it cannot provide there, so a client learns about missing boundaries
+    # without an authenticated call.
+    platform: str | None = None
+    unsupported_capabilities: list[ShortText] = Field(default_factory=list, max_length=64)
 
 
 class BackendIdentity(ContractModel):
@@ -1293,7 +1298,7 @@ class PassportV2Payload(ContractModel):
     runs_later: Literal["UNKNOWN"] = "UNKNOWN"
     limitations: list[ShortText] = Field(default_factory=list, max_length=32)
     issued_at: AwareDatetime
-    signer_provider: Literal["TPM", "SOFTWARE"] | None = None
+    signer_provider: Literal["TPM", "SOFTWARE", "SOFTWARE_FILE"] | None = None
     policy_preset_name: Literal["strict", "standard", "docs-only"] | None = None
     policy_preset_version: ShortText | None = None
     policy_change_type: Literal["code", "docs", "release"] | None = None
@@ -1321,7 +1326,7 @@ class PassportV2Issued(ContractModel):
     payload_digest: Digest
     signer_fingerprint: ShortText
     signer_public_spki_b64: str = Field(max_length=2048)
-    signer_provider: Literal["TPM", "SOFTWARE"]
+    signer_provider: Literal["TPM", "SOFTWARE", "SOFTWARE_FILE"]
     signer_identity: ShortText
     signature_b64: str = Field(max_length=512)
 

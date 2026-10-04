@@ -11,7 +11,8 @@ from backend.app.contracts.models import PassportV2Payload
 from backend.app.core.database import Database
 from backend.app.core.errors import AppError
 from backend.app.passport.card import render_html, render_svg
-from backend.app.passport.cng import CngKey, fingerprint
+from backend.app.passport.es256 import fingerprint
+from backend.app.passport.keys import SigningKey
 from backend.app.passport.format import MAX_BUNDLE_BYTES, MAX_MEMBER_BYTES, serialize_archive
 from backend.app.passport.jcs import canonicalize
 from backend.app.passport.identity import open_signing_key
@@ -80,7 +81,7 @@ class BundleExporter:
         claims = source_claims
         journal = self._journal_links(change_id, expected_count=claims.journal_event_count,
                                       expected_head=claims.journal_head)
-        with (CngKey.open(name=self._key_name) if self._key_name else open_signing_key()) as key:
+        with (SigningKey.open(name=self._key_name) if self._key_name else open_signing_key()) as key:
             claims = self._issuer._with_provider(claims, key.provider)
             spki = key.public_spki()
             signer_fp = fingerprint(spki)

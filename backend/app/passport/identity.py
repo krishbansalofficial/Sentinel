@@ -9,11 +9,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from backend.app.core.evidence_store import prepare_store_directory
-from backend.app.passport.cng import CngKey, DEFAULT_KEY_NAME, fingerprint
+from backend.app.core.evidence_store import default_store_directory, prepare_store_directory
+from backend.app.passport.es256 import fingerprint
+from backend.app.passport.file_key import DEFAULT_KEY_NAME
+from backend.app.passport.keys import SigningKey
 
 
 def identity_path() -> Path:
+    if os.name != "nt":
+        return default_store_directory() / "signing_identity.json"
     local = os.environ.get("LOCALAPPDATA")
     if not local:
         raise OSError("LOCALAPPDATA is required for the signing identity")
@@ -43,18 +47,18 @@ def active_key_name() -> str:
 
 
 @contextmanager
-def open_signing_key() -> Iterator[CngKey]:
+def open_signing_key() -> Iterator[SigningKey]:
     """A selector is a pin, never an instruction to mint another key."""
     path = identity_path()
     name = active_key_name()
     if path.exists():
-        with CngKey.open_existing(name=name) as key:
+        with SigningKey.open_existing(name=name) as key:
             data = json.loads(path.read_text(encoding="utf-8"))
             if fingerprint(key.public_spki()) != data["fingerprint"]:
-                raise ValueError("Selected CNG signing identity fingerprint changed")
+                raise ValueError("Selected signing identity fingerprint changed")
             yield key
     else:
-        with CngKey.open(name=DEFAULT_KEY_NAME) as key:
+        with SigningKey.open(name=DEFAULT_KEY_NAME) as key:
             yield key
 
 
@@ -63,7 +67,7 @@ def activate_key_name(name: str) -> None:
         raise ValueError("Invalid signing key name")
     path = identity_path()
     _protected(path)
-    with CngKey.open_existing(name=name) as key:
+    with SigningKey.open_existing(name=name) as key:
         expected = fingerprint(key.public_spki())
     content = json.dumps({"schema_version": 1, "key_name": name,
                           "fingerprint": expected},

@@ -2987,8 +2987,12 @@ export interface components {
         HealthResponse: {
             /** Api Version */
             api_version: string;
+            /** Platform */
+            platform?: string | null;
             /** Status */
             status: string;
+            /** Unsupported Capabilities */
+            unsupported_capabilities?: string[];
         };
         /**
          * JournalEffect
@@ -3238,7 +3242,7 @@ export interface components {
              * Signer Provider
              * @enum {string}
              */
-            signer_provider: "TPM" | "SOFTWARE";
+            signer_provider: "TPM" | "SOFTWARE" | "SOFTWARE_FILE";
             /** Signer Public Spki B64 */
             signer_public_spki_b64: string;
         };
@@ -3354,7 +3358,7 @@ export interface components {
              */
             schema_version: 2;
             /** Signer Provider */
-            signer_provider?: ("TPM" | "SOFTWARE") | null;
+            signer_provider?: ("TPM" | "SOFTWARE" | "SOFTWARE_FILE") | null;
         };
         /**
          * PathCategory

@@ -325,7 +325,7 @@ def verify_bundle(path: Path, *, trust: TrustRegistry | None = None,
                 "fingerprint", "provider", "identity"}
                 or signer["fingerprint"] != actual_fp
                 or signer["provider"] != signature["provider"]
-                or signer["provider"] not in {"TPM", "SOFTWARE"}
+                or signer["provider"] not in {"TPM", "SOFTWARE", "SOFTWARE_FILE"}
                 or not isinstance(signer["identity"], str)
                 or not signer["identity"].startswith("Sentinel installation ")):
             raise ValueError("Signer claims differ from signature")
@@ -357,8 +357,8 @@ def verify_bundle(path: Path, *, trust: TrustRegistry | None = None,
                 trust = TrustRegistry()
             decision, identity = trust.decision(spki=spki)
         except (ImportError, OSError, ValueError):
-            # ImportError: the registry needs Windows key storage; off Windows use
-            # use_registry=False with a pinned fingerprint instead.
+            # The registry file is missing, unsafe or unreadable; a pinned
+            # fingerprint (use_registry=False) still verifies.
             return VerificationResult("INDETERMINATE", "Recipient trust registry is unavailable.",
                                       **common)
         if decision == "REVOKED":

@@ -32,7 +32,8 @@ from backend.app.passport.boundary import (
 )
 from backend.app.workspace.repository import WorkspaceRepository
 from backend.app.policy.path_evidence import documentation_paths
-from backend.app.passport.cng import CngKey, fingerprint
+from backend.app.passport.es256 import fingerprint
+from backend.app.passport.keys import FILE_KEY_LIMITATION, FILE_PROVIDER, SigningKey
 from backend.app.passport.jcs import canonicalize
 from backend.app.passport.identity import open_signing_key
 from backend.app.policy.presets import PresetEvidence, evaluate_preset
@@ -385,7 +386,7 @@ class PassportV2Issuer:
     def issue(self, change_id: UUID) -> PassportV2Issued:
         """No payload argument exists: CNG signs only this freshly built snapshot."""
         source_payload = self.snapshot(change_id)
-        with (CngKey.open(name=self._key_name) if self._key_name else open_signing_key()) as key:
+        with (SigningKey.open(name=self._key_name) if self._key_name else open_signing_key()) as key:
             payload = self._with_provider(source_payload, key.provider)
             message = canonical_payload(payload)
             spki = key.public_spki()
@@ -410,6 +411,8 @@ class PassportV2Issuer:
             limitations.append(
                 "Software KSP key is non-exportable via CNG but recoverable by a same-user process via DPAPI."
             )
+        elif provider == FILE_PROVIDER:
+            limitations.append(FILE_KEY_LIMITATION)
         return PassportV2Payload.model_validate({**payload.model_dump(),
                                                  "signer_provider": provider,
                                                  "limitations": limitations})

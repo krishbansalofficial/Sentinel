@@ -18,7 +18,7 @@ except ImportError:
     UsageError = ClickUsageError
 
 from backend.app.passport.trust import TrustRegistry, load_public_key
-from backend.app.passport.cng import CngKey
+from backend.app.passport.keys import SigningKey
 from backend.app.passport.identity import active_key_name, activate_key_name
 from backend.app.passport.trust import normalize_fingerprint
 from backend.app.passport.verify import verify_bundle
@@ -69,9 +69,9 @@ def rotate_identity_command(*, output: Path, as_json: bool) -> None:
         if output.exists():
             raise FileExistsError("Rotation statement path already exists")
         old_name = active_key_name()
-        with CngKey.open_existing(name=old_name) as old:
+        with SigningKey.open_existing(name=old_name) as old:
             created = True  # A failed open may already have finalized the new key.
-            with CngKey.open(name=new_name) as successor:
+            with SigningKey.open(name=new_name) as successor:
                 statement = TrustRegistry().sign_rotation(
                     old_key=old, new_spki=successor.public_spki())
                 body = json.dumps(statement, sort_keys=True, separators=(",", ":"))
@@ -99,7 +99,7 @@ def rotate_identity_command(*, output: Path, as_json: bool) -> None:
                 pass  # Keep the successor key if rollback could not restore the selector.
         if created and not activated:
             try:
-                CngKey.delete_unactivated_successor(name=new_name)
+                SigningKey.delete_unactivated_successor(name=new_name)
             except Exception:
                 pass
         _fail(exc)

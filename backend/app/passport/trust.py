@@ -18,7 +18,7 @@ from typing import Callable, Iterator, Literal, ParamSpec, TypeVar
 
 from cryptography.hazmat.primitives import serialization
 
-from backend.app.passport.cng import CngKey
+from backend.app.passport.keys import SigningKey
 from backend.app.passport.es256 import (  # noqa: F401 (normalize_fingerprint re-exported)
     fingerprint, normalize_fingerprint, verify_signature,
 )
@@ -81,6 +81,10 @@ def _prepare_registry_path(path: Path) -> None:
 
 
 def default_trust_path() -> Path:
+    if os.name != "nt":
+        from backend.app.core.evidence_store import default_store_directory
+
+        return default_store_directory() / "trusted_keys.json"
     local = os.environ.get("LOCALAPPDATA")
     if not local:
         raise OSError("LOCALAPPDATA is required for the Sentinel trust registry")
@@ -317,7 +321,7 @@ class TrustRegistry:
             ancestor = parent.get("rotated_from")
         return "TRUSTED"
 
-    def sign_rotation(self, *, old_key: CngKey, new_spki: bytes) -> dict[str, str]:
+    def sign_rotation(self, *, old_key: SigningKey, new_spki: bytes) -> dict[str, str]:
         old_spki = old_key.public_spki()
         new_spki = _canonical_spki(new_spki)
         issued_at = datetime.now(UTC).isoformat()

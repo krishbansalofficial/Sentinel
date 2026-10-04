@@ -203,7 +203,7 @@ def test_failed_rotation_never_publishes_statement_or_orphans_successor(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     old_name = f"Sentinel disposable test {uuid4()}"
     successor_names: list[str] = []
-    actual_open = passport_commands.CngKey.open.__func__
+    actual_open = passport_commands.SigningKey.open.__func__
 
     def record_open(cls, *, name: str):
         successor_names.append(name)
@@ -213,7 +213,7 @@ def test_failed_rotation_never_publishes_statement_or_orphans_successor(
         try:
             activate_key_name(old_name)
             destination = tmp_path / "statement.json"
-            monkeypatch.setattr(passport_commands.CngKey, "open", classmethod(record_open))
+            monkeypatch.setattr(passport_commands.SigningKey, "open", classmethod(record_open))
             monkeypatch.setattr(passport_commands, "activate_key_name",
                                 lambda _name: (_ for _ in ()).throw(RuntimeError("activation failed")))
             result = CliRunner().invoke(cli_app, ["identity", "rotate", "--output",
@@ -259,8 +259,8 @@ def test_rotation_cleans_finalized_key_when_normal_open_rejects_it(
                 return actual_assert(key)
 
             with monkeypatch.context() as scoped:
-                scoped.setattr(passport_commands.CngKey, "open", classmethod(record_open))
-                scoped.setattr(passport_commands.CngKey, "_assert_nonexportable",
+                scoped.setattr(passport_commands.SigningKey, "open", classmethod(record_open))
+                scoped.setattr(passport_commands.SigningKey, "_assert_nonexportable",
                                reject_successor)
                 result = CliRunner().invoke(cli_app, ["identity", "rotate", "--output",
                                                       str(tmp_path / "failed.json")])

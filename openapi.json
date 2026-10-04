@@ -4223,9 +4223,30 @@
             "title": "Api Version",
             "type": "string"
           },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "unsupported_capabilities": {
+            "items": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Unsupported Capabilities",
+            "type": "array"
           }
         },
         "required": [
@@ -4814,7 +4835,8 @@
           "signer_provider": {
             "enum": [
               "TPM",
-              "SOFTWARE"
+              "SOFTWARE",
+              "SOFTWARE_FILE"
             ],
             "title": "Signer Provider",
             "type": "string"
@@ -5125,7 +5147,8 @@
               {
                 "enum": [
                   "TPM",
-                  "SOFTWARE"
+                  "SOFTWARE",
+                  "SOFTWARE_FILE"
                 ],
                 "type": "string"
               },
