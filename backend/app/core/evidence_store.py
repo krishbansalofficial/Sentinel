@@ -51,6 +51,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,13 +77,33 @@ LEGACY_STORE_DIRECTORY = ".change-assurance"
 REPOSITORY_CONFIRM_TIMEOUT_SECONDS = 10
 
 
-def default_store_directory(environ: Mapping[str, str] | None = None) -> Path:
-    """Return `%LOCALAPPDATA%\\Sentinel`, or `~/AppData/Local/Sentinel` without it."""
+def default_store_directory(
+    environ: Mapping[str, str] | None = None, *, platform: str | None = None
+) -> Path:
+    """The per-user store directory for this platform.
+
+    Windows: `%LOCALAPPDATA%\\Sentinel`, or `~/AppData/Local/Sentinel` without it.
+    macOS: `~/Library/Application Support/Sentinel`.
+    Linux and other POSIX: `$XDG_DATA_HOME/sentinel`, or `~/.local/share/sentinel`
+    when the variable is unset or not absolute (the XDG spec says to ignore a
+    relative value). Every name matches `STORE_DIRECTORY_NAME` case-insensitively,
+    so `prepare_store_directory` accepts it.
+    """
 
     source = os.environ if environ is None else environ
-    local_app_data = source.get("LOCALAPPDATA")
-    base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
-    return base / STORE_DIRECTORY_NAME
+    resolved_platform = sys.platform if platform is None else platform
+    if resolved_platform == "win32":
+        local_app_data = source.get("LOCALAPPDATA")
+        base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+        return base / STORE_DIRECTORY_NAME
+    if resolved_platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / STORE_DIRECTORY_NAME
+    xdg_data_home = source.get("XDG_DATA_HOME")
+    if xdg_data_home and Path(xdg_data_home).is_absolute():
+        base = Path(xdg_data_home)
+    else:
+        base = Path.home() / ".local" / "share"
+    return base / STORE_DIRECTORY_NAME.lower()
 
 
 def default_database_path(environ: Mapping[str, str] | None = None) -> Path:

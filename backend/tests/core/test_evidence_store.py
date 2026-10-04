@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -44,23 +45,34 @@ def _junction(target: Path, link: Path) -> None:
         pytest.skip(f"cannot create a junction here: {error}")
 
 
+
+# The default store's directory name on this platform (`default_store_directory`).
+STORE_NAME = "Sentinel" if sys.platform == "win32" else "sentinel"
+
+
+def _point_default_store(monkeypatch, base) -> None:
+    """Aim the default store at ``base`` on every platform."""
+    monkeypatch.setenv("LOCALAPPDATA", str(base))
+    monkeypatch.setenv("XDG_DATA_HOME", str(base))
+
 # ---- default location ---------------------------------------------------------
 
 
 def test_default_store_directory_uses_localappdata(tmp_path) -> None:
-    assert default_store_directory({"LOCALAPPDATA": str(tmp_path)}) == tmp_path / "Sentinel"
+    assert default_store_directory({"LOCALAPPDATA": str(tmp_path)}, platform="win32") == tmp_path / "Sentinel"
     assert STORE_DIRECTORY_NAME == "Sentinel"
 
 
 def test_default_store_directory_falls_back_to_home_appdata_local(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    assert default_store_directory({}) == tmp_path / "AppData" / "Local" / "Sentinel"
-    assert default_store_directory({"LOCALAPPDATA": ""}) == tmp_path / "AppData" / "Local" / "Sentinel"
+    assert default_store_directory({}, platform="win32") == tmp_path / "AppData" / "Local" / "Sentinel"
+    assert default_store_directory({"LOCALAPPDATA": ""}, platform="win32") == tmp_path / "AppData" / "Local" / "Sentinel"
 
 
 def test_default_database_path_appends_the_database_filename(tmp_path) -> None:
-    assert default_database_path({"LOCALAPPDATA": str(tmp_path)}) == (
-        tmp_path / "Sentinel" / "change_assurance.sqlite3"
+    assert default_database_path({"LOCALAPPDATA": str(tmp_path),
+                                  "XDG_DATA_HOME": str(tmp_path)}) == (
+        tmp_path / STORE_NAME / "change_assurance.sqlite3"
     )
     assert DATABASE_FILENAME == "change_assurance.sqlite3"
 
@@ -71,15 +83,15 @@ def test_legacy_database_path_is_under_cwd(tmp_path) -> None:
 
 def test_settings_default_to_localappdata_sentinel(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("CHANGE_ASSURANCE_DB_PATH", raising=False)
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    _point_default_store(monkeypatch, str(tmp_path))
     settings = Settings.from_environment()
-    assert settings.database_path == (tmp_path / "Sentinel" / "change_assurance.sqlite3").resolve()
+    assert settings.database_path == (tmp_path / STORE_NAME / "change_assurance.sqlite3").resolve()
 
 
 def test_settings_honor_the_database_path_override(tmp_path, monkeypatch) -> None:
     override = tmp_path / "elsewhere" / "custom.sqlite3"
     monkeypatch.setenv("CHANGE_ASSURANCE_DB_PATH", str(override))
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    _point_default_store(monkeypatch, str(tmp_path / "local"))
     assert Settings.from_environment().database_path == override.resolve()
 
 
@@ -181,7 +193,7 @@ def test_a_repository_at_the_user_profile_recommends_the_database_path_override(
     local = home / "AppData" / "Local"
     local.mkdir(parents=True)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-    monkeypatch.setenv("LOCALAPPDATA", str(local))
+    _point_default_store(monkeypatch, str(local))
 
     with pytest.raises(AppError) as caught:
         ensure_store_outside_repository(default_database_path())
@@ -346,7 +358,7 @@ def default_store_env(tmp_path, monkeypatch) -> tuple[Path, Path]:
     work.mkdir()
     monkeypatch.delenv("CHANGE_ASSURANCE_DB_PATH", raising=False)
     monkeypatch.delenv("CHANGE_ASSURANCE_API_TOKEN", raising=False)
-    monkeypatch.setenv("LOCALAPPDATA", str(local))
+    _point_default_store(monkeypatch, str(local))
     monkeypatch.chdir(work)
     return local, work
 
@@ -370,7 +382,7 @@ def test_startup_refuses_a_fresh_default_store_while_a_legacy_store_awaits_migra
         "database_path": str(default_database_path().resolve()),
     }
     # Refuse-before-write: no default directory, token or database was created.
-    assert not (local / STORE_DIRECTORY_NAME).exists()
+    assert not (local / STORE_NAME).exists()
 
 
 def test_the_documented_upgrade_flow_works_after_a_refused_startup(default_store_env) -> None:
@@ -382,10 +394,10 @@ def test_the_documented_upgrade_flow_works_after_a_refused_startup(default_store
         create_app(credential_store=InMemoryCredentialStore())
 
     result = evidence_store.migrate_store(source=legacy, target=default_database_path())
-    assert result.target_database == local / STORE_DIRECTORY_NAME / DATABASE_FILENAME
+    assert result.target_database == local / STORE_NAME / DATABASE_FILENAME
 
     app = create_app(credential_store=InMemoryCredentialStore())
-    token_path = local / STORE_DIRECTORY_NAME / "api_token"
+    token_path = local / STORE_NAME / "api_token"
     assert token_path.read_text(encoding="utf-8").strip() == app.state.api_token
     assert legacy.is_file()  # the old store is left in place for the user to delete
 
@@ -506,13 +518,13 @@ def test_create_app_restricts_the_default_directory_before_the_token_exists(
     monkeypatch.setattr(main_module, "prepare_store_directory", recording_prepare)
     monkeypatch.delenv("CHANGE_ASSURANCE_DB_PATH", raising=False)
     monkeypatch.delenv("CHANGE_ASSURANCE_API_TOKEN", raising=False)
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    _point_default_store(monkeypatch, str(tmp_path))
     monkeypatch.chdir(tmp_path)  # no legacy store in the working directory
 
     app = create_app(credential_store=InMemoryCredentialStore())
 
-    assert seen == [(tmp_path / "Sentinel", False)]
-    token_path = tmp_path / "Sentinel" / "api_token"
+    assert seen == [(tmp_path / STORE_NAME, False)]
+    token_path = tmp_path / STORE_NAME / "api_token"
     assert token_path.read_text(encoding="utf-8").strip() == app.state.api_token
 
 
@@ -524,7 +536,7 @@ def test_create_app_never_restricts_an_operator_chosen_directory(tmp_path, monke
         main_module, "prepare_store_directory",
         lambda directory, *, logger=None: seen.append(directory) or True,
     )
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    _point_default_store(monkeypatch, str(tmp_path / "local"))
 
     create_app(
         settings=Settings(database_path=tmp_path / "Sentinel" / "db.sqlite3"),
@@ -540,7 +552,7 @@ def test_create_app_default_directory_has_no_inherited_aces(tmp_path, monkeypatc
 
     monkeypatch.delenv("CHANGE_ASSURANCE_DB_PATH", raising=False)
     monkeypatch.delenv("CHANGE_ASSURANCE_API_TOKEN", raising=False)
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    _point_default_store(monkeypatch, str(tmp_path))
     monkeypatch.chdir(tmp_path)  # no legacy store in the working directory
 
     create_app(credential_store=InMemoryCredentialStore())
@@ -815,12 +827,12 @@ def test_an_integrity_failure_removes_only_what_this_call_created(
 
 def test_migrating_into_the_default_directory_restricts_it(tmp_path, quiet_acl, monkeypatch) -> None:
     source, _token = _build_source_store(tmp_path / "old")
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    _point_default_store(monkeypatch, str(tmp_path / "local"))
     target = default_database_path()
 
     evidence_store.migrate_store(source=source, target=target)
 
-    assert quiet_acl.calls[0] == (tmp_path / "local" / "Sentinel", True)
+    assert quiet_acl.calls[0] == (tmp_path / "local" / STORE_NAME, True)
     assert target.is_file()
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import tomllib
 from pathlib import Path
 
@@ -105,15 +106,17 @@ def test_migrate_store_defaults_move_the_legacy_store_to_localappdata(
     source_hash = _sha256(legacy_source)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "local"))
 
     result = runner.invoke(cli_main.app, ["migrate-store", "--json"])
 
     assert result.exit_code == 0, result.output
-    expected = tmp_path / "local" / "Sentinel" / "change_assurance.sqlite3"
+    store_name = "Sentinel" if sys.platform == "win32" else "sentinel"
+    expected = tmp_path / "local" / store_name / "change_assurance.sqlite3"
     assert json.loads(result.stdout)["target"] == str(expected)
     assert expected.is_file()
     assert (expected.parent / "api_token").read_text(encoding="utf-8").strip() != token
-    assert acl_recorder.calls[0] == (tmp_path / "local" / "Sentinel", True)
+    assert acl_recorder.calls[0] == (tmp_path / "local" / store_name, True)
     assert _sha256(legacy_source) == source_hash
 
 

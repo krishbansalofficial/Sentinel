@@ -19,6 +19,9 @@ from pathlib import Path
 
 _SESSION_STORE = Path(tempfile.mkdtemp(prefix="sentinel-test-store-"))
 os.environ["CHANGE_ASSURANCE_DB_PATH"] = str(_SESSION_STORE / "change_assurance.sqlite3")
+# Off Windows the default store (and the file signing keys under it) follows
+# XDG_DATA_HOME; keep it in the throwaway directory too.
+os.environ["XDG_DATA_HOME"] = str(_SESSION_STORE / "xdg-data")
 
 
 def pytest_unconfigure(config) -> None:  # noqa: ARG001 - pytest hook signature
