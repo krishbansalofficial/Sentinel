@@ -25,6 +25,9 @@ from backend.app.execution.check_runtime import (
     snapshot_tree,
 )
 
+windows_acl = pytest.mark.skipif(
+    os.name != "nt", reason="AppContainer package-SID ACL grants (icacls) are Windows-only")
+
 
 def _tree(root: Path, files: dict[str, str]) -> Path:
     for relative, text in files.items():
@@ -532,6 +535,7 @@ def entry(cache: Path) -> Path:
     return path
 
 
+@windows_acl
 def test_grant_adds_exactly_one_inheritable_rx_ace(icacls_recorder, entry: Path, cache: Path) -> None:
     grant_package_read(entry, PACKAGE_SID, allowed_root=cache)
     assert len(icacls_recorder.calls) == 1
@@ -541,6 +545,7 @@ def test_grant_adds_exactly_one_inheritable_rx_ace(icacls_recorder, entry: Path,
     assert kwargs["cwd"] == FAKE_ICACLS.parent
 
 
+@windows_acl
 def test_revoke_removes_only_that_sid(icacls_recorder, entry: Path, cache: Path) -> None:
     revoke_package_read(entry, PACKAGE_SID, allowed_root=cache)
     argv, _ = icacls_recorder.calls[0]
@@ -623,6 +628,7 @@ def test_non_package_sids_are_refused(icacls_recorder, entry, cache, sid, operat
     assert icacls_recorder.calls == []
 
 
+@windows_acl
 @pytest.mark.parametrize("operation", [grant_package_read, revoke_package_read])
 def test_paths_outside_the_allowed_root_are_refused(
     icacls_recorder, cache: Path, tmp_path: Path, operation,
@@ -637,6 +643,7 @@ def test_paths_outside_the_allowed_root_are_refused(
     assert icacls_recorder.calls == []
 
 
+@windows_acl
 def test_missing_and_file_targets_are_refused(icacls_recorder, entry: Path, cache: Path) -> None:
     for path in (cache / "python" / "missing", entry / "python.exe"):
         with pytest.raises(AppError) as raised:
@@ -665,6 +672,7 @@ def test_reparse_points_are_refused(icacls_recorder, cache: Path, tmp_path: Path
     assert icacls_recorder.calls == []
 
 
+@windows_acl
 def test_default_allowed_root_is_the_check_runtime_cache(
     icacls_recorder, tmp_path: Path, monkeypatch,
 ) -> None:

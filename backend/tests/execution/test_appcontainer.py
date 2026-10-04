@@ -11,7 +11,6 @@ from __future__ import annotations
 import dataclasses
 import inspect
 import json
-import msvcrt
 import os
 import shutil
 import threading
@@ -340,6 +339,8 @@ def _decoy_eof_seconds(start_child, *, wait: float) -> float | None:
     child = start_child()
     try:
         appcontainer._kernel32.CloseHandle(decoy_write)
+        import msvcrt
+
         reader = os.fdopen(msvcrt.open_osfhandle(decoy_read, os.O_RDONLY | os.O_BINARY), "rb", 0)
         done = threading.Event()
         began = time.monotonic()

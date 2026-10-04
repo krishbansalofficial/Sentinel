@@ -949,7 +949,10 @@ class CheckBox:
         arguments = list(argv)
         if not arguments or not all(isinstance(item, str) for item in arguments):
             raise check_box_invalid_argv("argv must be a non-empty list of strings")
-        if not os.path.isabs(arguments[0]) or not PureWindowsPath(arguments[0]).drive:
+        # On Windows a rooted path without a drive ("\tool.exe") is relative to
+        # the current drive, so a drive is required there; POSIX has no drives.
+        if not os.path.isabs(arguments[0]) or (
+                os.name == "nt" and not PureWindowsPath(arguments[0]).drive):
             raise check_box_invalid_argv("the executable must be an absolute path")
         boxes = self._boxes
         platform = boxes._platform

@@ -98,6 +98,7 @@ def test_cancel_running_child(tmp_path):
     assert launcher.stop(run_id).status is AgentRunStatus.CANCELLED
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="pause/resume uses Windows process suspension; the Linux cgroup freezer is Phase 1")
 def test_pause_and_resume_a_real_running_agent(tmp_path):
     launcher = AgentLauncher()
     holder = {}

@@ -521,7 +521,10 @@ def _is_reparse_point(path: str | Path) -> tuple[bool, bool]:
     info = os.lstat(path)
     attributes = getattr(info, "st_file_attributes", 0)
     reparse = bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT) or stat.S_ISLNK(info.st_mode)
-    return reparse, bool(attributes & stat.FILE_ATTRIBUTE_DIRECTORY)
+    # st_file_attributes exists only on Windows; elsewhere the lstat mode says it
+    # (a POSIX symlink is S_IFLNK, never S_IFDIR, so a link is still unlinked).
+    return reparse, bool(attributes & stat.FILE_ATTRIBUTE_DIRECTORY) or (
+        not reparse and stat.S_ISDIR(info.st_mode))
 
 
 def _remove_link(path: str | Path, is_directory: bool) -> None:

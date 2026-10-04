@@ -74,7 +74,8 @@ class Builders:
         return snapshot
 
     def find_node(self, repo: Path | None) -> Path | None:
-        return Path("C:\\Program Files\\nodejs\\node.exe") if self.node_found else None
+        # Forward slashes so `.name` is node.exe on POSIX too (a backslash is not a separator there).
+        return Path("C:/Program Files/nodejs/node.exe") if self.node_found else None
 
     def builders(self) -> RuntimeBuilders:
         return RuntimeBuilders(python=self.python, node=self.node,

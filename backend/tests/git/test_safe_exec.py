@@ -301,6 +301,7 @@ def test_hooks_path_is_a_regular_file_so_no_hook_can_be_planted_below_it(tmp_pat
     canary = tmp_path / "repo-hook-ran"
     hook = repo / ".git" / "hooks" / "post-commit"
     hook.write_bytes(f"#!/bin/sh\necho hit > '{canary.resolve().as_posix()}'\n".encode())
+    hook.chmod(0o755)  # POSIX Git runs only executable hooks
 
     result = run_git(repo, ["commit", "-q", "--allow-empty", "-m", "x"], identity=RECOVERY_IDENTITY)
 
@@ -367,6 +368,7 @@ def _merge_driver_repo(root: Path, canary: Path) -> tuple[Path, str]:
     _plain(repo, "commit", "-q", "-am", "edit last line")
     driver = root.parent / f"{root.name}-driver.sh"
     driver.write_bytes(f"#!/bin/sh\necho hit > '{canary.resolve().as_posix()}'\nexit 1\n".encode())
+    driver.chmod(0o755)
     _plain(repo, "config", "merge.evil.driver", driver.resolve().as_posix())
     return repo, target
 

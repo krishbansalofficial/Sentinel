@@ -156,8 +156,9 @@ def appcontainer_environment(
         raise ValueError(f"The AppContainer base environment lacks {', '.join(missing)}.")
     env = {key: base_env[key] for key in _BASE_KEYS}
     entries = [str(entry) for entry in (tools_dir, git_cmd_dir, node_dir) if entry is not None]
-    entries.extend(item for item in base_env["PATH"].split(os.pathsep) if item)
-    env["PATH"] = os.pathsep.join(dict.fromkeys(entries))
+    # A Windows environment block: ";" whatever the host's os.pathsep is.
+    entries.extend(item for item in base_env["PATH"].split(";") if item)
+    env["PATH"] = ";".join(dict.fromkeys(entries))
     if profile.staged_home:
         if home is None:
             raise ValueError("This runtime profile needs a staged home.")

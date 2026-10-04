@@ -94,6 +94,7 @@ def _posix(path: Path) -> str:
 def _script(path: Path, canary: Path, tail: str = "") -> Path:
     body = f"#!/bin/sh\necho hit > '{_posix(canary)}'\n{tail}"
     path.write_bytes(body.encode("utf-8"))
+    path.chmod(0o755)  # POSIX Git runs hooks and helpers only when executable
     return path
 
 

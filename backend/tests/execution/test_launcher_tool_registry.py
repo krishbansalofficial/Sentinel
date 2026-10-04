@@ -158,8 +158,9 @@ def test_supply_chain_digest_swap_invalidates_approved_trust(tmp_path, monkeypat
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    tool_path = bin_dir / "mytool.exe"
+    tool_path = bin_dir / ("mytool.exe" if os.name == "nt" else "mytool")
     tool_path.write_bytes(b"original-tool-bytes")
+    tool_path.chmod(0o755)  # PATH lookup off Windows needs the executable bit
     monkeypatch.setenv("PATH", str(bin_dir) + os.pathsep + os.environ.get("PATH", ""))
 
     database = _database(tmp_path)

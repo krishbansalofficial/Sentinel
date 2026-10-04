@@ -11,6 +11,8 @@ server backed by a real disposable Git repository.
 
 from __future__ import annotations
 
+import sys
+
 import os
 import socket
 import threading
@@ -308,6 +310,7 @@ async def test_tools_screen_real_approve_decision_reaches_the_api(live_change) -
         await pilot.pause()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="pause/resume uses Windows process suspension; the Linux cgroup freezer is Phase 1")
 @pytest.mark.anyio
 async def test_evidence_screen_real_pause_and_resume_a_running_agent(live_change) -> None:
     """Launch a real long-running agent in the background, pause it and
