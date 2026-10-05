@@ -330,7 +330,7 @@ class PassportV2Issuer:
         bound = [PassportV2LaunchBoundary(run_id=item.run_id, boundary=item.boundary,
                                           package_sid=item.package_sid)
                  for item in observed]
-        if claim == "APPCONTAINER":
+        if claim in ("APPCONTAINER", "LINUX_SANDBOX") and reason is None:
             return claim, None, bound
         return claim, f"Execution boundary {claim}: {reason}.", bound
 

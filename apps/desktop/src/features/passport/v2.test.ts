@@ -13,8 +13,10 @@ test("every ExecutionBoundary in the contract has wording, and no stale ones rem
   assert.deepEqual([...spec.components.schemas.PassportV2LaunchBoundary.properties.boundary.enum].sort(), Object.keys(BOUNDARIES).sort());
 });
 
-test("only a verified AppContainer reads as ok; unconfined is danger", () => {
+test("only a verified AppContainer or Linux sandbox reads as ok; unconfined is danger", () => {
   assert.equal(boundaryClaimInfo("APPCONTAINER").tone, "ok");
+  assert.equal(boundaryClaimInfo("LINUX_SANDBOX").tone, "ok");
+  assert.notEqual(boundaryClaimInfo("LINUX_SANDBOX").label, boundaryClaimInfo("APPCONTAINER").label);
   assert.equal(boundaryClaimInfo("UNCONFINED").tone, "danger");
   assert.notEqual(boundaryClaimInfo("RESTRICTED_TOKEN").tone, "ok");
   assert.notEqual(boundaryClaimInfo("UNKNOWN").tone, "ok");

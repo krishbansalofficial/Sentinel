@@ -1254,7 +1254,9 @@ class PassportV2LaunchBinding(ContractModel):
 
 # Observed agent execution boundary. APPCONTAINER only from verified token facts;
 # RESTRICTED_TOKEN and UNCONFINED name weaker launches; UNKNOWN when unestablished.
-ExecutionBoundary = Literal["APPCONTAINER", "RESTRICTED_TOKEN", "UNCONFINED", "UNKNOWN"]
+# Additive: LINUX_SANDBOX (verified bubblewrap + seccomp + cgroup launch, Phase 1).
+ExecutionBoundary = Literal["APPCONTAINER", "LINUX_SANDBOX", "RESTRICTED_TOKEN", "UNCONFINED",
+                            "UNKNOWN"]
 
 
 class PassportV2LaunchBoundary(ContractModel):

@@ -56,7 +56,7 @@ def test_strict_requires_confined_checks_and_appcontainer_even_with_full_coverag
                                                      freshness="CURRENT"))
     assert result.status == "DENY"
     assert result.reasons == (
-        "confined checks must be PASS", "observed AppContainer boundary is required")
+        "confined checks must be PASS", "observed verified boundary (AppContainer or Linux sandbox) is required")
 
 
 def test_docs_only_accepts_only_observed_documentation_changes() -> None:
@@ -83,7 +83,7 @@ def test_strict_docs_waits_for_confined_checks() -> None:
                                                      changed_paths=("README.md",)))
     assert result.status == "DENY"
     assert "confined checks must be PASS" in result.reasons
-    assert "observed AppContainer boundary is required" in result.reasons
+    assert "observed verified boundary (AppContainer or Linux sandbox) is required" in result.reasons
 
 
 def test_stale_freshness_and_unknown_preset_deny_by_name() -> None:

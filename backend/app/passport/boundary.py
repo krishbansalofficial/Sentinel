@@ -3,8 +3,16 @@
 A launch is APPCONTAINER only when the workspace run that leased the clone for
 it recorded verified token facts (AppContainer token, Low integrity, Job Object
 verified before resume) AND the launch record's authority text is exactly the
-one those facts produce. Anything absent or inconsistent is UNKNOWN, never
-APPCONTAINER. The Change-level claim is the weakest launch boundary.
+one those facts produce. LINUX_SANDBOX follows the same rule with the Linux
+facts (separate namespaces, an added seccomp filter, no_new_privs, the run
+cgroup) recorded for a ``linux-sandbox:`` workspace. Anything absent or
+inconsistent is UNKNOWN, never a verified boundary, and LINUX_SANDBOX is never
+relabeled APPCONTAINER (or the reverse).
+
+The Change-level claim is the weakest launch boundary. APPCONTAINER and
+LINUX_SANDBOX are one strength class (kb, 2026-10-03): when every launch is in
+it, the claim keeps each launch's own name; a Change whose launches used both
+reports the first one launched and says so in the reason.
 """
 
 from __future__ import annotations
@@ -16,11 +24,16 @@ from typing import Any, Literal
 from uuid import UUID
 
 from backend.app.execution.check_repository import verified_token_facts
-from backend.app.execution.launcher import appcontainer_authority
+from backend.app.execution.launcher import appcontainer_authority, linux_sandbox_authority
+from backend.app.execution.linux_sandbox import verified_linux_facts
 
-Boundary = Literal["APPCONTAINER", "RESTRICTED_TOKEN", "UNCONFINED", "UNKNOWN"]
+Boundary = Literal["APPCONTAINER", "LINUX_SANDBOX", "RESTRICTED_TOKEN", "UNCONFINED",
+                   "UNKNOWN"]
 
 APPCONTAINER = "APPCONTAINER"
+LINUX_SANDBOX = "LINUX_SANDBOX"
+VERIFIED = frozenset({APPCONTAINER, LINUX_SANDBOX})
+LINUX_IDENTITY_PREFIX = "linux-sandbox:"
 RESTRICTED_TOKEN = "RESTRICTED_TOKEN"
 UNCONFINED = "UNCONFINED"
 UNKNOWN = "UNKNOWN"
@@ -84,6 +97,8 @@ def launch_boundary(run_id: UUID, launch: Mapping[str, Any],
         if facts is None:
             return LaunchBoundary(run_id, UNKNOWN, None,
                                   "the workspace run recorded no verified launch")
+        if isinstance(facts, Mapping) and facts.get("sandbox_kind") == "linux_sandbox":
+            return _linux_launch(run_id, authority, package_sid, facts)
         if not _verified_facts(facts, package_sid):
             return LaunchBoundary(run_id, UNKNOWN, None,
                                   "the workspace run's boundary facts did not verify")
@@ -95,6 +110,9 @@ def launch_boundary(run_id: UUID, launch: Mapping[str, Any],
     if isinstance(authority, str) and authority.startswith("AppContainer boundary verified"):
         return LaunchBoundary(run_id, UNKNOWN, None,
                               "an AppContainer launch has no workspace run record")
+    if isinstance(authority, str) and authority.startswith("Linux sandbox verified"):
+        return LaunchBoundary(run_id, UNKNOWN, None,
+                              "a Linux sandbox launch has no workspace run record")
     if not isinstance(launch.get("restricted_token_applied"), bool):
         return LaunchBoundary(run_id, UNKNOWN, None,
                               "the launch record carries no token facts")
@@ -107,6 +125,21 @@ def launch_boundary(run_id: UUID, launch: Mapping[str, Any],
                           "a launch ran with the existing account authority")
 
 
+def _linux_launch(run_id: UUID, authority: Any, package_sid: str | None,
+                  facts: Mapping[str, Any]) -> LaunchBoundary:
+    if not isinstance(package_sid, str) or not package_sid.startswith(LINUX_IDENTITY_PREFIX):
+        return LaunchBoundary(run_id, UNKNOWN, None,
+                              "Linux sandbox facts were recorded for a non-Linux workspace")
+    if not verified_linux_facts(facts):
+        return LaunchBoundary(run_id, UNKNOWN, None,
+                              "the workspace run's boundary facts did not verify")
+    expected = linux_sandbox_authority(facts)
+    if not isinstance(authority, str) or expected is None or authority != expected:
+        return LaunchBoundary(run_id, UNKNOWN, None,
+                              "the launch record does not match its boundary facts")
+    return LaunchBoundary(run_id, LINUX_SANDBOX, package_sid, None)
+
+
 def change_boundary(launches: Sequence[LaunchBoundary]) -> tuple[Boundary, str | None]:
     """The weakest launch boundary; UNKNOWN when no launch ran agent code."""
 
@@ -117,4 +150,8 @@ def change_boundary(launches: Sequence[LaunchBoundary]) -> tuple[Boundary, str |
         for item in ran:
             if item.boundary == weakest:
                 return weakest, item.reason
-    return APPCONTAINER, None
+    names = list(dict.fromkeys(item.boundary for item in ran))
+    if len(names) == 1:
+        return names[0], None
+    return names[0], ("launches ran under " + " and ".join(names)
+                      + ", one strength class; the first launched is named")

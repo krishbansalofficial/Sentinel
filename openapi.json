@@ -3986,6 +3986,7 @@
               {
                 "enum": [
                   "APPCONTAINER",
+                  "LINUX_SANDBOX",
                   "RESTRICTED_TOKEN",
                   "UNCONFINED",
                   "UNKNOWN"
@@ -4895,6 +4896,7 @@
           "boundary": {
             "enum": [
               "APPCONTAINER",
+              "LINUX_SANDBOX",
               "RESTRICTED_TOKEN",
               "UNCONFINED",
               "UNKNOWN"
@@ -4978,6 +4980,7 @@
             "default": "UNKNOWN",
             "enum": [
               "APPCONTAINER",
+              "LINUX_SANDBOX",
               "RESTRICTED_TOKEN",
               "UNCONFINED",
               "UNKNOWN"

@@ -2915,7 +2915,7 @@ export interface components {
             /** Diff Exercised */
             diff_exercised?: ("PASS" | "FAIL" | "UNKNOWN" | "STALE" | "NOT_APPLICABLE") | null;
             /** Execution Boundary */
-            execution_boundary?: ("APPCONTAINER" | "RESTRICTED_TOKEN" | "UNCONFINED" | "UNKNOWN") | null;
+            execution_boundary?: ("APPCONTAINER" | "LINUX_SANDBOX" | "RESTRICTED_TOKEN" | "UNCONFINED" | "UNKNOWN") | null;
             /** Freshness */
             freshness?: ("CURRENT" | "STALE" | "UNKNOWN") | null;
             /** Head Sha */
@@ -3270,7 +3270,7 @@ export interface components {
              * Boundary
              * @enum {string}
              */
-            boundary: "APPCONTAINER" | "RESTRICTED_TOKEN" | "UNCONFINED" | "UNKNOWN";
+            boundary: "APPCONTAINER" | "LINUX_SANDBOX" | "RESTRICTED_TOKEN" | "UNCONFINED" | "UNKNOWN";
             /** Package Sid */
             package_sid?: string | null;
             /**
@@ -3304,7 +3304,7 @@ export interface components {
              * @default UNKNOWN
              * @enum {string}
              */
-            execution_boundary: "APPCONTAINER" | "RESTRICTED_TOKEN" | "UNCONFINED" | "UNKNOWN";
+            execution_boundary: "APPCONTAINER" | "LINUX_SANDBOX" | "RESTRICTED_TOKEN" | "UNCONFINED" | "UNKNOWN";
             /**
              * Issued At
              * Format: date-time

@@ -325,7 +325,7 @@ def test_lesser_status_clears_old_denial_contexts(tmp_path, monkeypatch) -> None
 
     def with_denials(cls, value):
         return validate(value).model_copy(update={
-            "policy_preset_name": "strict", "policy_preset_version": "1.3.2",
+            "policy_preset_name": "strict", "policy_preset_version": "1.4.0",
             "policy_decision": "DENY", "policy_denials": denials.copy(),
         })
 

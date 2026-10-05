@@ -9,7 +9,7 @@ from typing import Literal
 
 PresetName = Literal["strict", "standard", "docs-only"]
 ChangeType = Literal["code", "docs", "release"]
-PRESET_VERSION = "1.3.2"
+PRESET_VERSION = "1.4.0"  # 1.4.0: LINUX_SANDBOX satisfies the boundary rule
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +113,9 @@ def evaluate_preset(*, preset_name: str, change_type: str,
             reasons.append(f"diff coverage must measure at least {rule.minimum_coverage}%")
     if rule.confined_checks and evidence.confined_checks != "PASS":
         reasons.append("confined checks must be PASS")
-    if rule.appcontainer_boundary and evidence.execution_boundary != "APPCONTAINER":
-        reasons.append("observed AppContainer boundary is required")
+    # One strength class (kb, 2026-10-03): a verified AppContainer or Linux sandbox.
+    if rule.appcontainer_boundary and evidence.execution_boundary not in (
+            "APPCONTAINER", "LINUX_SANDBOX"):
+        reasons.append("observed verified boundary (AppContainer or Linux sandbox) is required")
     return PresetDecision(preset_name, PRESET_VERSION, change_type,
                           "DENY" if reasons else "ALLOW", tuple(reasons))

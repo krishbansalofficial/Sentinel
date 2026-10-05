@@ -368,7 +368,7 @@ def test_evaluator_gets_the_same_value_strict_still_needs_the_boundary() -> None
     strict = evaluate_preset(preset_name="strict", change_type="code",
                              evidence=PresetEvidence(**evidence, confined_checks="PASS"))
     assert strict.status == "DENY"
-    assert strict.reasons == ("observed AppContainer boundary is required",)
+    assert strict.reasons == ("observed verified boundary (AppContainer or Linux sandbox) is required",)
 
 
 # ----------------------------------------------------------------- signatures
