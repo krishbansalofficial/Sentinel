@@ -25,6 +25,7 @@ or to a refusal:
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -129,7 +130,12 @@ def _find_host_node(source_root: Path | None) -> Path | None:
     # Without a repository there is nothing to exclude; a file is never a PATH parent.
     root = (Path(source_root).resolve() if source_root is not None
             else Path(sys.executable).resolve())
-    return find_executable("node", minimal_environment(), root)
+    found = find_executable("node", minimal_environment(), root)
+    if found is not None and os.name != "nt":
+        # A POSIX `node` is often a link (/usr/local/bin/node -> .../bin/node); the
+        # snapshot copies the real binary and refuses links by design.
+        found = Path(os.path.realpath(found))
+    return found
 
 
 @dataclass(frozen=True, slots=True)

@@ -235,7 +235,10 @@ def test_box_child_sees_no_host_path_entry(tmp_path, monkeypatch):
     result = run(tmp_path, "import os; print(os.environ['PATH'])")
     entries = result.stdout.strip().split(os.pathsep)
     assert str(tmp_path) not in entries and "." not in entries
-    assert str(Path(sys.executable).parent) not in entries and git_dir not in entries
+    # The box's own system directories are expected; only caller entries must not leak.
+    system = set() if os.name == "nt" else {"/usr/bin", "/bin"}
+    for leaked in (str(Path(sys.executable).parent), git_dir):
+        assert leaked not in entries or leaked in system, leaked
 
 
 def test_invalid_directory_error_does_not_echo_input():

@@ -66,8 +66,11 @@ class HostBoxWindows:
         return {
             "SystemRoot": system_root, "windir": system_root,
             "COMSPEC": os.path.join(system_root, "System32", "cmd.exe"),
+            # The host's system directory: System32 on Windows, /usr/bin and /bin elsewhere
+            # (npm runs package scripts through sh).
             "PATH": os.pathsep.join([*(str(p) for p in path_entries),
-                                     os.path.join(system_root, "System32")]),
+                                     *([os.path.join(system_root, "System32")] if os.name == "nt"
+                                       else ["/usr/bin", "/bin"])]),
             "LOCALAPPDATA": str(self.root), "TEMP": str(temp), "TMP": str(temp),
         }
 
@@ -122,7 +125,10 @@ def host_resolver(executable: str, *, interpreter=None, source_root=None) -> Res
     if base == "node":
         prefix: tuple[str, ...] = (str(node),)
     elif base == "npm":
+        node = Path(os.path.realpath(node)) if os.name != "nt" else node
         cli = node.parent / "node_modules" / "npm" / "bin" / "npm-cli.js"
+        if not cli.is_file() and os.name != "nt":  # Unix layout: <prefix>/lib/node_modules/npm
+            cli = node.parent.parent / "lib" / "node_modules" / "npm" / "bin" / "npm-cli.js"
         if not cli.is_file():
             raise check_runtime_unavailable(executable, "npm-cli.js was not found")
         prefix = (str(node), str(cli))

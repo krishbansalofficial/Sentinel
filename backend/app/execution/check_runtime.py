@@ -685,6 +685,10 @@ def node_runtime(
         raise check_runtime_failed("node", "node must be an absolute file path")
     sources: list[tuple[str, Path]] = [(node.name, node)]
     npm = node.parent / "node_modules" / "npm"
+    if not os.path.lexists(npm) and os.name != "nt":
+        # Unix installs keep npm at <prefix>/lib/node_modules/npm (node is <prefix>/bin/node);
+        # it lands at the same snapshot path either way, so the npm entry is unchanged.
+        npm = node.parent.parent / "lib" / "node_modules" / "npm"
     if os.path.lexists(npm):
         sources.append(("node_modules/npm", npm))
     return _snapshot(sources, kind="node", root=None if root is None else Path(root),
