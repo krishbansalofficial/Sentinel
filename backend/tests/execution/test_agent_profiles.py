@@ -47,12 +47,53 @@ def test_every_builtin_profile_declares_exactly_one_boundary_kind():
 
 
 @pytest.mark.parametrize("extra", [None, {}, {"fake-node": CUSTOM}])
-def test_claude_always_resolves_to_appcontainer(extra):
-    """PROMOTE decision: claude can never resolve to the restricted-token path (D-01)."""
+@pytest.mark.parametrize(("platform", "expected"), [
+    ("win32", BoundaryKind.APPCONTAINER),
+    ("linux", BoundaryKind.LINUX_SANDBOX),
+    ("darwin", BoundaryKind.UNAVAILABLE),
+    ("freebsd14", BoundaryKind.UNAVAILABLE),
+])
+def test_claude_resolves_to_its_declared_platform_boundary(extra, platform, expected):
+    """PROMOTE decision + D-03: claude can never resolve to the restricted-token path (D-01).
 
-    profile = resolve_profile("claude", extra)
-    assert profile.boundary is BoundaryKind.APPCONTAINER
-    assert profile is BUILTIN_PROFILES["claude"]
+    Each platform gets exactly the boundary declared for it; an undeclared one
+    fails closed.
+    """
+
+    profile = resolve_profile("claude", extra, platform=platform)
+    assert profile.boundary is expected
+    assert profile.boundary is not BoundaryKind.RESTRICTED_TOKEN
+    assert profile.adapter == "claude" and profile.tool_snapshot and profile.staged_home
+    if expected is BoundaryKind.UNAVAILABLE:
+        assert platform in profile.unavailable_reason
+
+
+def test_profiles_without_a_platform_map_ignore_the_platform():
+    for platform in ("win32", "linux", "darwin"):
+        assert resolve_profile("generic", platform=platform).boundary is BoundaryKind.RESTRICTED_TOKEN
+        assert resolve_profile("codex", platform=platform).boundary is BoundaryKind.UNAVAILABLE
+
+
+@pytest.mark.parametrize(("boundaries", "match"), [
+    ((("linux", BoundaryKind.APPCONTAINER),), "does not exist"),
+    ((("win32", BoundaryKind.LINUX_SANDBOX),), "does not exist"),
+    ((("linux", BoundaryKind.LINUX_SANDBOX), ("linux", BoundaryKind.UNAVAILABLE)), "repeats"),
+    ((("", BoundaryKind.RESTRICTED_TOKEN),), "repeats or omits"),
+    ((("linux", "linux_sandbox"),), "no valid boundary"),
+])
+def test_platform_maps_are_validated(boundaries, match):
+    profile = RuntimeProfile("custom-agent", BoundaryKind.RESTRICTED_TOKEN, boundaries=boundaries)
+    with pytest.raises(ValueError, match=match):
+        validate_extra_profiles({"custom-agent": profile})
+
+
+def test_a_valid_custom_platform_map_resolves():
+    profile = RuntimeProfile("custom-agent", BoundaryKind.RESTRICTED_TOKEN, boundaries=(
+        ("linux", BoundaryKind.LINUX_SANDBOX), ("win32", BoundaryKind.RESTRICTED_TOKEN)))
+    extra = validate_extra_profiles({"custom-agent": profile})
+    assert resolve_profile("custom-agent", extra, platform="linux").boundary is BoundaryKind.LINUX_SANDBOX
+    assert resolve_profile("custom-agent", extra, platform="win32").boundary is BoundaryKind.RESTRICTED_TOKEN
+    assert resolve_profile("custom-agent", extra, platform="darwin").boundary is BoundaryKind.UNAVAILABLE
 
 
 @pytest.mark.parametrize("name", ["claude", "generic", "codex"])
@@ -66,7 +107,8 @@ def test_builtin_profiles_cannot_be_overridden(name):
 def test_claude_resolves_to_appcontainer_even_if_extra_names_it():
     # validate_extra_profiles refuses this mapping; resolve_profile still ignores it.
     sneaky = {"claude": RuntimeProfile("claude", BoundaryKind.RESTRICTED_TOKEN)}
-    assert resolve_profile("claude", sneaky).boundary is BoundaryKind.APPCONTAINER
+    assert resolve_profile("claude", sneaky, platform="win32").boundary is BoundaryKind.APPCONTAINER
+    assert resolve_profile("claude", sneaky, platform="linux").boundary is BoundaryKind.LINUX_SANDBOX
 
 
 # -- built-in contents ------------------------------------------------------------

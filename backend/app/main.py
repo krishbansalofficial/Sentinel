@@ -65,6 +65,7 @@ from backend.app.core.runtime_service import (
 )
 from backend.app.credentials.broker import CredentialBroker
 from backend.app.credentials.selection import select_credential_store
+from backend.app.workspace.profiles import LinuxWorkspaceProfiles
 from backend.app.execution.check_box import CheckBoxes
 from backend.app.execution.check_repository import CheckRunRepository
 from backend.app.execution.launcher import AgentLauncher
@@ -122,6 +123,7 @@ _DEFAULT_CONFIGURED_CAPABILITIES = {
     "event_journal",
     "replay",
     "tool_registry",
+    "linux_sandbox",
 }
 
 
@@ -187,9 +189,14 @@ def create_app(
         checkpoint = evidence_store.named_checkpoint(change_id, BASELINE)
         return checkpoint.head_sha if checkpoint is not None else None
 
+    # Workspace identity and storage per platform, chosen explicitly: AppContainer
+    # profiles on Windows, private store directories for the Linux sandbox.
+    workspace_profiles = (None if sys.platform == "win32" else
+                          LinuxWorkspaceProfiles(resolved_settings.database_path.parent))
     workspace_manager = WorkspaceManager(
         database, baseline_head=baseline_head,
         credential_purger=broker.purge_staged_credentials, journal=journal,
+        profiles=workspace_profiles,
     )
     # Phase 5: per-run confined check boxes. Verification, assurance checks and
     # diff-coverage collection all run in them (05-03).

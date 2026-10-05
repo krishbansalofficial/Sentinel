@@ -120,6 +120,8 @@ def ensure_tool_snapshot(
             # A swap of the source during the copy is caught here.
             if copied.hexdigest() != source_digest or sha256_file(source_path) != source_digest:
                 raise tool_snapshot_failed("the source changed while it was copied")
+            if os.name != "nt":
+                os.chmod(partial, 0o555)  # POSIX execs only executable files; never writable
             os.replace(partial, snapshot)
         finally:
             if os.path.lexists(partial):

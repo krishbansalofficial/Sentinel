@@ -74,8 +74,13 @@ def test_change_refresh_and_verify_flow(tmp_path) -> None:
         assert {key: body[key] for key in ("status", "api_version")} == {
             "status": "ok", "api_version": "1"}
         assert body["platform"] == sys.platform
-        assert body["unsupported_capabilities"] == (
-            [] if sys.platform == "win32" else ["process_supervisor"])
+        unsupported = set(body["unsupported_capabilities"])
+        if sys.platform == "win32":
+            assert unsupported == {"linux_sandbox"}
+        elif sys.platform.startswith("linux"):  # the sandbox depends on this host's setup
+            assert {"process_supervisor"} <= unsupported <= {"process_supervisor", "linux_sandbox"}
+        else:
+            assert unsupported == {"process_supervisor", "linux_sandbox"}
 
         created = client.post(
             "/api/v1/changes",

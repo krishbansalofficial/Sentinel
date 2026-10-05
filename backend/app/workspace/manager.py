@@ -59,6 +59,7 @@ from backend.app.execution.appcontainer import (
     remove_tree_no_follow,
     validate_profile_name,
 )
+from backend.app.workspace.profiles import ContainerProfiles
 from backend.app.git.safe_exec import METADATA_LIMIT, RECOVERY_IDENTITY, GitIdentity, run_git
 from backend.app.workspace.errors import (
     workspace_apply_failed,
@@ -278,8 +279,31 @@ def _patch_additions(patch: bytes) -> list[tuple[str | None, bytes]]:
     return [(path, b"\n".join(lines)) for path, lines in sections if lines]
 
 
+class _AppContainerProfiles:
+    """Windows `ContainerProfiles`: AppContainer profiles, resolved at call time
+    through this module's names (so the Windows-specific calls stay patchable)."""
+
+    def ensure(self, name: str) -> tuple[str, Path]:
+        profile, _created = ensure_profile(name, display_name=PROFILE_DISPLAY_NAME)
+        return profile.package_sid, profile.container_path
+
+    def delete(self, name: str) -> None:
+        delete_profile(name)
+
+    def exists(self, name: str) -> bool:
+        return profile_exists(name)
+
+    def storage_root(self, name: str) -> Path:
+        return local_appdata_known_folder() / "Packages" / name
+
+
 class WorkspaceManager:
-    """Owns the lifecycle of per-Change workspace clones and their AppContainer profiles."""
+    """Owns the lifecycle of per-Change workspace clones and their isolation profiles.
+
+    ``profiles`` supplies each workspace's identity and storage: AppContainer
+    profiles by default (Windows), `profiles.LinuxWorkspaceProfiles` for the
+    Linux sandbox. The composition root picks one per platform.
+    """
 
     def __init__(
         self, database: Database, *, profile_prefix: str = "sentinel.w.",
@@ -287,8 +311,10 @@ class WorkspaceManager:
         baseline_head: Callable[[UUID], str | None] | None = None,
         credential_purger: Callable[[Path], bool] | None = None,
         journal: JournalWriter | None = None,
+        profiles: ContainerProfiles | None = None,
     ) -> None:
         validate_profile_name(profile_prefix + "0" * 32)
+        self._profiles: ContainerProfiles = profiles or _AppContainerProfiles()
         self.repository = WorkspaceRepository(database)
         self._prefix = profile_prefix
         self._git_timeout = git_timeout
@@ -521,10 +547,9 @@ class WorkspaceManager:
 
     def _build(self, record: WorkspaceRecord, source: Path, base_sha: str) -> WorkspaceRecord:
         try:
-            profile, _created = ensure_profile(record.profile_name, display_name=PROFILE_DISPLAY_NAME)
-            container = profile.container_path
+            identity, container = self._profiles.ensure(record.profile_name)
             record = self._save(
-                record, WorkspaceState.CREATING, package_sid=profile.package_sid,
+                record, WorkspaceState.CREATING, package_sid=identity,
                 container_path=container, workspace_path=container / _WORKSPACE_DIRECTORY,
             )
             clone = self._git(
@@ -1190,7 +1215,7 @@ class WorkspaceManager:
     def _profile_folder(self, record: WorkspaceRecord) -> tuple[Path, Path]:
         """(``Packages\\<profile>``, its ``AC`` folder), refusing a foreign recorded path."""
 
-        packages = local_appdata_known_folder() / "Packages" / record.profile_name
+        packages = self._profiles.storage_root(record.profile_name)
         container = Path(record.container_path) if record.container_path else packages / "AC"
         if not _same_path(container.parent, packages):
             raise workspace_cleanup_failed(
@@ -1220,7 +1245,7 @@ class WorkspaceManager:
         if problems:
             return False
         try:
-            delete_profile(record.profile_name)
+            self._profiles.delete(record.profile_name)
         except AppError as exc:
             problems.append(f"profile delete failed ({exc.details.get('hresult')})")
             return False
@@ -1229,7 +1254,7 @@ class WorkspaceManager:
                 self._remove_with_retries(packages)
             except OSError as exc:
                 problems.append(f"could not remove the profile folder ({type(exc).__name__})")
-        return not os.path.lexists(packages) and not profile_exists(record.profile_name)
+        return not os.path.lexists(packages) and not self._profiles.exists(record.profile_name)
 
     _CLEANUP_REASONS = {
         WorkspaceState.APPLIED: "applied",

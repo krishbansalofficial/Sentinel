@@ -49,6 +49,7 @@ def test_tampered_snapshot_fails_closed(tmp_path, tool):
     tools = tmp_path / "ac" / "tools"
     tools.parent.mkdir()
     snapshot = ensure_tool_snapshot(tool, tools, trusted_digest=None)
+    snapshot.path.chmod(0o755)  # read-only on POSIX; a same-user attacker can chmod it
     snapshot.path.write_bytes(b"MZ evil replacement")
     with pytest.raises(AppError) as caught:
         ensure_tool_snapshot(tool, tools, trusted_digest=None)

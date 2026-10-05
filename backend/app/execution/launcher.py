@@ -29,6 +29,7 @@ from __future__ import annotations
 import base64
 import os
 import re
+import sys
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -55,6 +56,10 @@ from backend.app.execution.appcontainer import (
 )
 from backend.app.execution.process_supervisor import (
     IS_WINDOWS, SupervisedProcess, is_process_running, list_pids, spawn_restricted_supervised,
+)
+from backend.app.execution.cgroups import CgroupHierarchy, RunLimits
+from backend.app.execution.linux_sandbox import (
+    SandboxSpec, require_sandbox, sandbox_unavailable, spawn_linux_sandbox,
 )
 from backend.app.execution.resolve import find_executable, resolve_argv, safe_path_entries
 from backend.app.execution.signal_control import resume_process, suspend_process
@@ -123,6 +128,27 @@ CREDENTIAL_NOT_STAGED_LIMITATION = (
 CREDENTIAL_NOT_DELETED_LIMITATION = (
     "The staged model credential could not be confirmed deleted after the run; the "
     "workspace sweep removes the staged home.")
+# Formatted from the facts observed on the live sandbox process before it ran.
+LINUX_SANDBOX_AUTHORITY = (
+    "Linux sandbox verified before the agent ran: separate {namespaces} namespaces, a seccomp "
+    "filter added ({filters} filters, supervisor {supervisor_filters}), no_new_privs set, all "
+    "capabilities dropped, member of cgroup {cgroup}. The agent works in a Sentinel-owned "
+    "workspace clone, not in the selected repository; changes reach the repository only "
+    "through a previewed, approved fast-forward apply-back."
+)
+LINUX_SUPERVISED_LIMITATION = (
+    "The sandboxed process tree was supervised through its cgroup: every process stays in it, "
+    "so stop and pause act on the whole tree. Exit codes of descendants are not observable "
+    "and are reported as unknown."
+)
+LINUX_NETWORK_LIMITATION = (
+    "Outbound network access is not restricted (the profile shares the host network).")
+LINUX_CONTAINMENT_LIMITATION = (
+    "Containment was verified by Sentinel's Linux probes (workspace-only writes, home, store "
+    "and token unreadable, network, seccomp, process tree); other resources are UNKNOWN "
+    "until tested.")
+# Keys a Linux sandbox environment sets itself; a caller may never forward them.
+_LINUX_RESERVED_KEYS = frozenset({"PATH", "HOME", "TMPDIR", "USER", "LOGNAME", "SHELL"})
 # Keys an AppContainer environment sets itself; a caller may never forward them.
 _APPCONTAINER_RESERVED_KEYS = PROTECTED_ENV_KEYS | {"CLAUDE_CODE_GIT_BASH_PATH"}
 
@@ -196,6 +222,29 @@ def _capability_names(sids: tuple[str, ...]) -> str:
     return ", ".join(f"{names.get(sid.upper(), 'unknown')} {sid}" for sid in sids) or "none"
 
 
+def linux_sandbox_authority(facts: object) -> str | None:
+    """``LINUX_SANDBOX_AUTHORITY`` for a verified facts payload; None otherwise."""
+
+    from backend.app.execution.linux_sandbox import NAMESPACES, verified_linux_facts
+
+    payload = facts.to_payload() if hasattr(facts, "to_payload") else facts
+    if not verified_linux_facts(payload):
+        return None
+    separate = [name for name in NAMESPACES
+                if name != "net" or payload.get("network_isolated") is True]
+    return LINUX_SANDBOX_AUTHORITY.format(
+        namespaces=", ".join(separate), filters=payload["seccomp_filters"],
+        supervisor_filters=payload["supervisor_seccomp_filters"], cgroup=payload["cgroup"])
+
+
+def _is_native_linux_executable(path: str) -> bool:
+    try:
+        with open(path, "rb") as handle:
+            return handle.read(4) == b"\x7fELF"
+    except OSError:
+        return False
+
+
 def appcontainer_authority(facts: object) -> str | None:
     """``APPCONTAINER_AUTHORITY`` for verified facts; None when nothing was verified."""
 
@@ -220,12 +269,19 @@ class AgentLauncher:
         workspaces: WorkspaceProvider | None = None,
         credentials: CredentialStager | None = None,
         profiles: Mapping[str, RuntimeProfile] | None = None,
+        cgroups: Callable[[], CgroupHierarchy] | None = None,
+        run_limits: RunLimits | None = None,
     ) -> None:
         # Built-in profiles (claude = AppContainer, codex = unavailable) can never
         # be overridden: this raises ValueError for such a mapping (D-01).
         self._profiles = validate_extra_profiles(profiles)
         self._workspaces = workspaces
         self._credentials = credentials
+        # Linux sandbox: where run cgroups are created (resolved lazily, so a
+        # host without cgroup v2 only fails when a sandboxed launch is asked for).
+        self._cgroups_factory = cgroups or CgroupHierarchy.from_environment
+        self._cgroups: CgroupHierarchy | None = None
+        self._run_limits = run_limits or RunLimits()
         table = {
             "generic": AgentAdapter("generic", frozenset(generic_executables)),
             "codex": CODEX_ADAPTER,
@@ -286,6 +342,9 @@ class AgentLauncher:
         if profile.boundary is BoundaryKind.APPCONTAINER:
             return self._launch_appcontainer(
                 change_id, repository_path, request, adapter, profile, output_limit_bytes)
+        if profile.boundary is BoundaryKind.LINUX_SANDBOX:
+            return self._launch_linux_sandbox(
+                change_id, repository_path, request, adapter, profile, output_limit_bytes)
         root = self._root(repository_path)
         env, secrets = self._environment(request, adapter, root)
         # Resolve the executable path exactly once and reuse it for both the
@@ -337,6 +396,190 @@ class AgentLauncher:
             initial_limitations=list(unavailable),
             final_limitations=[EXIT_LIMITATION, *unavailable],
         )
+
+    # -- Linux sandbox boundary (D-03: claude on linux) -------------------------
+
+    def _cgroup_hierarchy(self) -> CgroupHierarchy:
+        if self._cgroups is None:
+            hierarchy = self._cgroups_factory()
+            hierarchy.prepare()
+            self._cgroups = hierarchy
+        return self._cgroups
+
+    def _launch_linux_sandbox(
+        self, change_id: UUID, repository_path: str, request: AgentLaunchRequest,
+        adapter: AgentAdapter, profile: RuntimeProfile, output_limit_bytes: int,
+    ) -> AgentRun:
+        """Launch inside a verified bubblewrap sandbox over the Change's workspace, or fail closed.
+
+        Same shape as the AppContainer path: refusals before a run exists raise
+        (not Linux, no bwrap or user namespaces, no delegated cgroup, no
+        workspace provider, a reserved key, a non-native executable); once the
+        workspace is leased every failure is an ERROR run, the staged
+        credential is revoked exactly once and ``finish_run`` records the
+        verified facts. Nothing here calls the unconfined launcher.
+        """
+
+        if not sys.platform.startswith("linux"):
+            raise sandbox_unavailable("the Linux sandbox runs only on Linux")
+        workspaces = self._workspaces
+        if workspaces is None:
+            raise AppError(
+                "AGENT_WORKSPACE_UNAVAILABLE",
+                "This adapter runs only inside a Sentinel workspace sandbox, and no workspace "
+                "provider is configured.",
+                status_code=503, details={"adapter": adapter.name},
+            )
+        reserved = _LINUX_RESERVED_KEYS | {key.upper() for key, _ in profile.static_env}
+        if any(key.upper() in reserved for key in request.environment_keys):
+            raise AppError("AGENT_ENVIRONMENT_KEY_DENIED",
+                           "An environment key is not permitted for a launched agent.")
+        root = self._root(repository_path)
+        host_env, secrets = self._environment(request, adapter, root)
+        argv = resolve_argv(request.executable, host_env, root)
+        if profile.requires_native_executable and (
+                len(argv) != 1 or not os.path.isabs(argv[0])
+                or not _is_native_linux_executable(argv[0])):
+            raise AppError(
+                "AGENT_RUNTIME_PROFILE_UNAVAILABLE",
+                "This adapter's Linux sandbox profile requires a native executable (a single "
+                "ELF binary, not a script shim); native executable required.",
+                status_code=409, details={"adapter": adapter.name},
+            )
+        require_sandbox()  # fail closed before anything is leased or staged
+        hierarchy = self._cgroup_hierarchy()
+        tool_manifest = self._check_tool_trust(change_id, argv)
+        run_id = uuid4()
+        lease = workspaces.ensure(change_id, str(root), run_id=run_id)
+
+        staged: list[StagedCredential] = []
+        revoked = [False]
+        notes: list[str] = []
+        spawned: list[object] = []
+        network = "internetClient" in profile.capabilities
+        limitations = [*([LINUX_NETWORK_LIMITATION] if network else []),
+                       WORKSPACE_CONTENT_LIMITATION, LINUX_CONTAINMENT_LIMITATION]
+        layout: dict[str, Path | None] = {}
+
+        def revoke() -> list[str]:
+            if not staged or revoked[0]:
+                return []
+            revoked[0] = True
+            try:
+                outcome = self._credentials.revoke_staged_credential(staged[0])  # type: ignore[union-attr]
+            except Exception:
+                return [CREDENTIAL_NOT_DELETED_LIMITATION]
+            texts = [CREDENTIAL_STAGED_LIMITATION if outcome.deleted
+                     else CREDENTIAL_NOT_DELETED_LIMITATION]
+            if outcome.changed_during_run:
+                texts.append(CREDENTIAL_CHANGED_LIMITATION)
+            return texts
+
+        def prepare(arguments: list[str]) -> tuple[list[str], Path, dict[str, str]]:
+            return self._prepare_linux_sandbox(
+                change_id, lease, profile, request, arguments, host_env, secrets,
+                tool_manifest, staged, notes, layout)
+
+        def spawn(arguments, process_cwd, process_env, redact):
+            writable = tuple(path for path in (layout.get("workspace"), layout.get("home"))
+                             if path is not None)
+            readonly = tuple(path for path in (layout.get("tools"),) if path is not None)
+            cgroup = hierarchy.create_run(run_id, self._run_limits)
+            spec = SandboxSpec(argv=tuple(arguments), cwd=Path(process_cwd), env=process_env,
+                               writable=writable, readonly=readonly, network=network)
+            process = spawn_linux_sandbox(spec, cgroup, redact=redact)
+            spawned.append(process)
+            return process
+
+        def start_update(process: object | None, record: AgentRun) -> dict[str, object]:
+            facts = getattr(process, "linux_sandbox", None)
+            supervised = facts is not None
+            return {
+                "descendant_control_available": supervised,
+                "restricted_token_applied": False,
+                "authority_reduction": linux_sandbox_authority(facts) if facts else None,
+                "limitations": ([LINUX_SUPERVISED_LIMITATION, *limitations]
+                                if supervised else record.limitations),
+            }
+
+        def after() -> list[str]:
+            return [*notes, *revoke()]
+
+        strategy = _LaunchStrategy(
+            spawn=spawn, supervise=True, start_update=start_update,
+            supervised_limitations=[LINUX_SUPERVISED_LIMITATION, *limitations],
+            error_text=lambda exc: f"The agent did not start ({exc.code}): {exc.message}",
+            final_limitations=[EXIT_LIMITATION], prepare=prepare, after=after,
+        )
+        run: AgentRun | None = None
+        try:
+            run = self._execute(
+                change_id=change_id, adapter=adapter, request=request,
+                output_limit_bytes=output_limit_bytes, run_id=run_id, argv=argv,
+                resolve_error=None, cwd=root, env=host_env, secrets=secrets,
+                tool_manifest=tool_manifest, strategy=strategy,
+            )
+            return run
+        finally:
+            leftover = revoke()
+            facts = getattr(spawned[0], "linux_sandbox", None) if spawned else None
+            workspaces.finish_run(
+                lease.id, run_id,
+                facts=facts.to_payload() if facts is not None else None,
+                status=(run.status.value if run is not None else AgentRunStatus.ERROR.value),
+                limitations=[*(run.limitations if run is not None else []), *leftover],
+            )
+
+    def _prepare_linux_sandbox(
+        self, change_id: UUID, lease: WorkspaceLease, profile: RuntimeProfile,
+        request: AgentLaunchRequest, argv: list[str], host_env: Mapping[str, str],
+        secrets: list[str], tool_manifest: ToolManifest | None,
+        staged: list[StagedCredential], notes: list[str], layout: dict[str, Path | None],
+    ) -> tuple[list[str], Path, dict[str, str]]:
+        """Snapshot, staged home, credential and environment for one sandboxed run."""
+
+        if lease.container_path is None or lease.workspace_path is None:
+            raise AppError("AGENT_WORKSPACE_UNAVAILABLE",
+                           "The workspace has no sandbox folder.", status_code=503)
+        container = Path(lease.container_path)
+        workspace = Path(lease.workspace_path)
+        tools_dir: Path | None = None
+        if profile.tool_snapshot:
+            tools_dir = container / "tools"
+            snapshot = ensure_tool_snapshot(
+                Path(argv[0]), tools_dir,
+                trusted_digest=tool_manifest.artifact_digest if tool_manifest else None,
+            )
+            argv = [str(snapshot.path), *argv[1:]]
+        home: Path | None = None
+        if profile.staged_home:
+            home = rebuild_staged_home(container / "home").root
+        if profile.credential_kind is not None:
+            credential = (
+                self._credentials.stage_agent_credential(change_id, profile.credential_kind, home)
+                if self._credentials is not None and home is not None else None
+            )
+            if credential is None:
+                notes.append(CREDENTIAL_NOT_STAGED_LIMITATION)
+            else:
+                staged.append(credential)
+                self._workspaces.record_credential(lease.id, credential.fingerprint)  # type: ignore[union-attr]
+                secrets[:] = sorted(
+                    {*secrets, *(value for value in credential.redaction_values if len(value) >= 8)},
+                    key=len, reverse=True,
+                )
+        layout.update(workspace=workspace, home=home, tools=tools_dir)
+        path_entries = [str(tools_dir)] if tools_dir is not None else []
+        path_entries += ["/usr/local/bin", "/usr/bin", "/bin"]
+        env = {"PATH": ":".join(path_entries), "TMPDIR": "/tmp", "LANG": "C.UTF-8"}
+        if home is not None:
+            env["HOME"] = str(home)
+        env.update(dict(profile.static_env))
+        for key in request.environment_keys:
+            value = host_env.get(key.upper())
+            if value is not None:
+                env[key.upper()] = value
+        return argv, workspace, env
 
     # -- AppContainer boundary (D-01: claude) ----------------------------------
 
@@ -566,7 +809,7 @@ class AgentLauncher:
             return process
 
         def on_poll(process: object) -> None:
-            if not isinstance(process, SupervisedProcess) or process.session is None:
+            if getattr(process, "session", None) is None:
                 return
             descendants = process.session.observe()
             with self._lock:
@@ -786,6 +1029,10 @@ class AgentLauncher:
         if pid is None:
             raise AppError("AGENT_RUN_NOT_PAUSABLE",
                            "The agent run has no observed process yet.", status_code=409)
+        freezer = getattr(state.process, "suspend", None)
+        if callable(freezer):  # Linux sandbox: freeze the whole cgroup at once
+            freezer()
+            return self._mark_paused(state)
         suspended: list[int] = []
         try:
             for target in self._tree_pids(state, pid):
@@ -800,6 +1047,9 @@ class AgentLauncher:
                 except AppError:
                     pass
             raise
+        return self._mark_paused(state)
+
+    def _mark_paused(self, state: _State) -> AgentRun:
         with self._lock:
             state.record = state.record.model_copy(
                 update={"status": AgentRunStatus.PAUSED, "paused_at": utc_now()})
@@ -822,11 +1072,17 @@ class AgentLauncher:
         if pid is None:
             raise AppError("AGENT_RUN_NOT_RESUMABLE",
                            "The agent run has no observed process.", status_code=409)
+        thaw = getattr(state.process, "resume", None)
+        if callable(thaw):  # Linux sandbox: thaw the whole cgroup at once
+            thaw()
+            targets: list[int] = []
+        else:
+            targets = self._tree_pids(state, pid)
         # Resume every member even if one fails, rather than abandoning the
         # rest of the tree suspended because one PID (e.g. one that exited
         # mid-call) couldn't be resumed; the first failure is still raised.
         first_error: AppError | None = None
-        for target in self._tree_pids(state, pid):
+        for target in targets:
             try:
                 resume_process(target)
             except AppError as exc:
@@ -948,9 +1204,9 @@ class AgentLauncher:
             ]
         terminated = 0
         for state in states:
-            process = state.process
-            if isinstance(process, SupervisedProcess) and process.session is not None:
-                terminated += process.session.terminate()
+            session = getattr(state.process, "session", None)
+            if session is not None:
+                terminated += session.terminate()
                 state.cancel.set()
         return terminated
 
