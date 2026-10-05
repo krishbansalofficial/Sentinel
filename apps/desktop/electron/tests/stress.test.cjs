@@ -98,9 +98,16 @@ test("a slow or failing backend never wedges later requests", async () => {
       return { status: 200, text: async () => "{}" };
     },
   });
-  const outcomes = await Promise.all(Array.from({ length: 30 }, () => proxy({ method: "GET", path: "/api/v1/x", timeoutMs: 20 }).then((r) => r.status, (e) => e.code)));
-  assert.deepEqual([...new Set(outcomes)].sort(), [200, "backend_timeout", "backend_unreachable"].map(String).sort().map((v) => (v === "200" ? 200 : v)).sort());
-  assert.equal((await proxy({ method: "GET", path: "/api/v1/ok", timeoutMs: 500 }).catch((e) => e.code)) !== undefined, true);
+  // AbortSignal.timeout() timers are unref()ed; a real fetch holds a socket open while it
+  // waits, this fake holds nothing, so keep the event loop alive until the timeouts fire.
+  const alive = setInterval(() => {}, 1 << 30);
+  try {
+    const outcomes = await Promise.all(Array.from({ length: 30 }, () => proxy({ method: "GET", path: "/api/v1/x", timeoutMs: 20 }).then((r) => r.status, (e) => e.code)));
+    assert.deepEqual([...new Set(outcomes)].sort(), [200, "backend_timeout", "backend_unreachable"].map(String).sort().map((v) => (v === "200" ? 200 : v)).sort());
+    assert.equal((await proxy({ method: "GET", path: "/api/v1/ok", timeoutMs: 500 }).catch((e) => e.code)) !== undefined, true);
+  } finally {
+    clearInterval(alive);
+  }
 });
 
 function fakeChild(pid) {

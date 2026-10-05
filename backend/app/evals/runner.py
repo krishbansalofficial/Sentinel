@@ -25,6 +25,7 @@ from __future__ import annotations
 from backend.app.core.telemetry import traced
 
 import hashlib
+import re
 import shutil
 import tempfile
 import time
@@ -41,6 +42,7 @@ from backend.app.git.safe_exec import GitIdentity, run_git
 EVAL_IDENTITY = GitIdentity(name="Sentinel Eval", email="eval@sentinel.invalid")
 DEFAULT_PROMPT_TEMPLATE = "{prompt}"
 PASSED, FAILED, ERROR = "PASSED", "FAILED", "ERROR"
+_PLACEHOLDER = re.compile(r"\{(prompt|title)\}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +56,9 @@ class AgentConfig:
     settings: tuple[tuple[str, str], ...] = ()
 
     def render(self, task: EvalTask) -> str:
-        return self.prompt_template.replace("{prompt}", task.prompt).replace("{title}", task.title)
+        # One pass: a "{title}" written inside the task prompt is text, not a placeholder.
+        values = {"prompt": task.prompt, "title": task.title}
+        return _PLACEHOLDER.sub(lambda match: values[match.group(1)], self.prompt_template)
 
     def to_payload(self) -> dict[str, Any]:
         return {"name": self.name, "agent": self.agent, "model": self.model,
@@ -153,11 +157,16 @@ def _digest(path: Path) -> str:
 
 
 def hidden_tests_absent(task: EvalTask, tree: Path) -> bool:
-    """No file in ``tree`` has a hidden test's relative path or content digest."""
+    """No file in ``tree`` has a hidden test's relative path or content digest.
+
+    Empty hidden files (``__init__.py`` markers) are matched by path only: their
+    digest would match every empty file in the fixture and say nothing.
+    """
     hidden = task.hidden_files()
     names = {path.as_posix() for path in hidden}
     names |= {(Path("hidden_tests") / path).as_posix() for path in hidden}
-    digests = {_digest(task.hidden_tests / path) for path in hidden}
+    digests = {_digest(task.hidden_tests / path) for path in hidden
+               if (task.hidden_tests / path).stat().st_size > 0}
     for path in tree.rglob("*"):
         if ".git" in path.relative_to(tree).parts or not path.is_file():
             continue

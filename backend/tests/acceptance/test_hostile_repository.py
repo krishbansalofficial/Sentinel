@@ -234,8 +234,10 @@ def test_positive_control_commit_mechanisms_fire_under_plain_git(tmp_path) -> No
     repo, _, _ = build_hostile_repository(tmp_path / "repo", canary_dir, filtered_files=False)
     root = Path(repo)
 
-    # commit.gpgSign=true runs gpg.program (which fails, aborting the commit).
-    plain_git(root, "commit", "--allow-empty", "-m", "signed", check=False)
+    # commit.gpgSign=true runs gpg.program (which fails, aborting the commit). The format is
+    # pinned: a global gpg.format=ssh on the runner would route signing to gpg.ssh.program.
+    plain_git(root, "-c", "gpg.format=openpgp", "commit", "--allow-empty", "-m", "signed",
+              check=False)
     # Unsigned, the commit completes and fires the remaining commit hooks.
     plain_git(root, "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", "unsigned",
               check=False)
