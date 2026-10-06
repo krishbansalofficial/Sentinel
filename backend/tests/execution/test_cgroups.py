@@ -196,3 +196,30 @@ def test_pids_walks_child_cgroups(tmp_path: Path) -> None:
     cgroup = RunCgroup(run, tmp_path)
     assert cgroup.pids() == [10, 11, 12]
     assert cgroup.populated() and not cgroup.frozen()
+
+
+def test_an_apparmor_userns_restriction_is_named_with_its_remedy(tmp_path: Path, monkeypatch) -> None:
+    import sys
+
+    from backend.app.execution import linux_sandbox
+
+    fake_bwrap = tmp_path / "bwrap"
+    fake_bwrap.write_text("")
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(linux_sandbox.seccomp, "host_arch", lambda machine=None: "x86_64")
+    monkeypatch.setattr(linux_sandbox, "find_bwrap", lambda environ=None: fake_bwrap)
+    monkeypatch.setattr(linux_sandbox, "probe_bwrap", lambda bwrap: (
+        False, "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted", True))
+    sysctl = tmp_path / "apparmor_restrict_unprivileged_userns"
+    monkeypatch.setattr(linux_sandbox, "APPARMOR_USERNS_SYSCTL", sysctl)
+    sysctl.write_text("1\n")
+    monkeypatch.setattr(linux_sandbox, "_apparmor_restricts_userns",
+                        lambda path=sysctl: path.read_text().strip() == "1")
+    with pytest.raises(AppError) as raised:
+        linux_sandbox.require_sandbox()
+    assert raised.value.code == "LINUX_SANDBOX_UNAVAILABLE"
+    assert "AppArmor" in raised.value.message and "userns" in raised.value.message
+    sysctl.write_text("0\n")
+    with pytest.raises(AppError) as raised:
+        linux_sandbox.require_sandbox()
+    assert "unprivileged_userns_clone" in raised.value.message

@@ -67,6 +67,17 @@ jobs:
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q bubblewrap
           python -m pip install -e ".[test,tui,keyring]"
+      - name: Let bwrap (only) create user namespaces under AppArmor
+        run: |
+          # Ubuntu 24.04 restricts unprivileged user namespaces; give /usr/bin/bwrap the
+          # shipped profile rather than disabling the restriction machine-wide.
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns || true
+          if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then
+            sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict || true
+          fi
+          sudo install -m 0644 packaging/apparmor/sentinel-bwrap /etc/apparmor.d/sentinel-bwrap
+          sudo apparmor_parser -r /etc/apparmor.d/sentinel-bwrap
+          bwrap --unshare-all --unshare-user --die-with-parent --ro-bind / / --proc /proc --dev /dev -- /bin/true
       - name: Sandbox tests in a delegated cgroup v2 subtree
         env:
           SENTINEL_REQUIRE_LINUX_SANDBOX: '1'

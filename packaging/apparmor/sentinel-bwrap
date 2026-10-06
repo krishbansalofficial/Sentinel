@@ -1,0 +1,23 @@
+# AppArmor profile for bubblewrap on kernels that restrict unprivileged user namespaces
+# (kernel.apparmor_restrict_unprivileged_userns=1, the Ubuntu 24.04 default).
+#
+# Without it, the kernel moves bwrap's new user namespace into the `unprivileged_userns`
+# profile, which denies the capabilities bwrap needs inside it (for example bringing up
+# loopback in the new network namespace), and Sentinel's Linux sandbox fails closed.
+# This grants the `userns` permission to /usr/bin/bwrap only, instead of turning the
+# restriction off for every program on the machine.
+#
+# Install (as root):
+#   install -m 0644 packaging/apparmor/sentinel-bwrap /etc/apparmor.d/sentinel-bwrap
+#   apparmor_parser -r /etc/apparmor.d/sentinel-bwrap
+# If the distribution's own `bwrap-userns-restrict` profile is loaded, unload it first
+# (apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict): it attaches to the same path.
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile sentinel-bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+
+  include if exists <local/sentinel-bwrap>
+}

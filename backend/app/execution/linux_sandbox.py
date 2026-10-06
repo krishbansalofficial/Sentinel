@@ -124,6 +124,16 @@ def probe_bwrap(bwrap: Path) -> tuple[bool, str, bool]:
         return outcome
 
 
+APPARMOR_USERNS_SYSCTL = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
+
+
+def _apparmor_restricts_userns(sysctl: Path = APPARMOR_USERNS_SYSCTL) -> bool:
+    try:
+        return sysctl.read_text(encoding="ascii").strip() == "1"
+    except OSError:
+        return False
+
+
 def require_sandbox(environ: Mapping[str, str] | None = None) -> tuple[Path, bool]:
     """The bwrap binary and whether it supports --disable-userns, or fail closed."""
     if not sys.platform.startswith("linux"):
@@ -135,9 +145,16 @@ def require_sandbox(environ: Mapping[str, str] | None = None) -> tuple[Path, boo
     bwrap = find_bwrap(environ)
     works, detail, disable_userns = probe_bwrap(bwrap)
     if not works:
+        if _apparmor_restricts_userns():
+            raise sandbox_unavailable(
+                f"bwrap cannot set up its namespaces here ({detail}). This kernel restricts "
+                "unprivileged user namespaces through AppArmor "
+                "(kernel.apparmor_restrict_unprivileged_userns=1, the Ubuntu 24.04 default); "
+                f"give {bwrap} its own AppArmor profile with the 'userns' permission (see "
+                "SECURITY.md) instead of turning the restriction off for every program")
         raise sandbox_unavailable(
             f"bwrap cannot create unprivileged namespaces here ({detail}); user namespaces "
-            "may be disabled (kernel.unprivileged_userns_clone, AppArmor userns restriction)")
+            "may be disabled (kernel.unprivileged_userns_clone, user.max_user_namespaces)")
     return bwrap, disable_userns
 
 
