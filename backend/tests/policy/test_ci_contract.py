@@ -20,6 +20,14 @@ def test_windows_ci_runs_default_suite_on_every_push() -> None:
     assert "run: python -m pytest -q" in text
 
 
+def test_linux_sandbox_ci_requires_the_real_boundary_tests() -> None:
+    text = _workflow()
+    job = text[text.index("linux-sandbox:"):]
+    assert "apt-get install -y -q bubblewrap" in job
+    assert "SENTINEL_REQUIRE_LINUX_SANDBOX: '1'" in job
+    assert "backend/tests/execution/linux" in job
+
+
 def test_linux_ci_collects_and_runs_the_default_suite() -> None:
     text = _workflow()
     linux = text[text.index("pytest-linux:"):]
