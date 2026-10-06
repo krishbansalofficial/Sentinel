@@ -17,6 +17,34 @@ Written: 2026-10-03. Status updated 2026-10-09. Read this whole file before touc
 
 Verification for `b00ad7b`..`42aea0a` (2026-10-09): Windows targeted suites (core, evals, policy, launcher, contract, AppContainer fuzz) green after the fixes in those commits; Linux full suite 2024 passed with the only failures being the README count and CI pin tests fixed in `42aea0a`/`b00ad7b` and telemetry tests needing the `[telemetry]` extra (86/86 green with it); desktop typecheck, api:check and 65 unit tests green. Docker is only the Windows dev box's way to reach a Linux kernel for tests; Sentinel never uses Docker at runtime.
 
+### Eval audit and mock backtest (2026-10-06)
+Bugs found and fixed (each has a regression test that fails on the old code):
+* `SandboxHiddenTestRunner` read the wrapper's `returncode`, which `communicate()` on the
+  inner Popen never sets: every confined Linux hidden test scored FAILED (0% pass rate).
+  Confirmed on a real kernel. `LinuxSandboxProcess.communicate_with_timeout` now owns the
+  wait, timeout kill and return code; only `TimeoutExpired` counts as a timeout.
+* `VerificationHiddenTestRunner` (Windows) posted a flat body to `/verify`, which takes
+  `VerificationActionRequest` (an actor plus nested verification): every Windows confined
+  hidden test would 422. It now creates an actor with a `change.legacy_verify` delegation
+  and clamps the timeout to the contract's 300 s.
+* The hidden-test cgroup hierarchy was lazily prepared without a lock (races with
+  `--workers`); `spawn_linux_sandbox` leaked the run cgroup when bwrap was missing;
+  `hidden_tests_absent` matched empty hidden files (`__init__.py`) against any empty fixture
+  file; prompt templates substituted `{title}` inside the substituted prompt.
+* Desktop Electron tests: 12 of 104 were cancelled on Node 22 (fakes held no handle while
+  unref()ed timers were awaited); fixed in the tests. Now 104/104.
+* Tests: a positive control depended on the runner's global `gpg.format`; seccomp
+  "native architecture" skips were impossible parametrizations; stale skip reasons.
+* Added Linux confined Go tests (`execution/linux/test_linux_confined_go.py`) and real-kernel
+  hidden-runner tests (`execution/linux/test_hidden_sandbox.py`).
+* Backtest: `bench/regression_detection/` (360 confined attempts, 3/3 correct verdicts;
+  false-positive rate 3.5% over 200 same-config trials).
+
+Verification (Linux 6.18 container, Python 3.13): full suite as root and as a non-root user
+(see the commit for counts); real-kernel suite 205 passed, 2 skipped (pids/memory controllers
+unavailable on this hybrid-cgroup host); desktop api:check, typecheck, 69 unit and 104
+Electron tests. Remaining skips are Windows-only, macOS-only or the opt-in live Claude test.
+
 ### Linux confined check boxes: implemented
 The Linux platform in `execution/linux_check_box.py` supplies the existing `BoxPlatform`
 seam: private 0700 storage, Linux identities, scratch HOME/TMPDIR, and verified bubblewrap,
@@ -124,7 +152,7 @@ not available in containers (do not change `.wslconfig`: it restarts WSL and Doc
    authenticated Claude eval with tracing. Local acceptance includes a connected mock trace
    in Jaeger, desktop build/tests and three Eval browser tests. Spans cover launch, boundary
    verification, checks and eval jobs; W3C context crosses the CLI/API and worker threads.
-1. **Phase 2 leftovers**: tests for `SandboxHiddenTestRunner` (Linux) and `VerificationHiddenTestRunner` (Windows);
+1. **Phase 2 leftovers**: (done: tests for `SandboxHiddenTestRunner` and `VerificationHiddenTestRunner`);
    a first real `--agent claude` run (needs a Claude login) to fill the eval results table.
    Ubuntu 24.04 hosts need `packaging/apparmor/sentinel-bwrap` (read its trade-off note).
 2. **Done: Linux confined check boxes** (Phase 1 item 6): verified Linux platform,
@@ -383,7 +411,8 @@ Node repos) with hidden tests. Optionally import a SWE bench Lite subset later.
 Acceptance:
 - [ ] `sentinel eval run --suite evals/tasks --agent claude --k 3` produces a results report
       (JSON plus a static HTML page).
-- [ ] Hidden tests are provably absent from the agent's workspace (test asserts it).
+- [x] Hidden tests are provably absent from the agent's workspace (test asserts it).
+      (`evals/test_runner.py`, real-kernel `execution/linux/test_hidden_sandbox.py`.)
 - [x] `compare` detects an injected regression (a deliberately broken prompt) and does not
       flag two runs of the same config. (Mock agent, `test_seed_suite_and_cli.py`; exit 3.)
 - [x] Unit tests for the Wilson interval and bootstrap against known values.
