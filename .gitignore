@@ -33,6 +33,8 @@ node_modules/
 # .planning/ (GSD workflow state), subdirectory READMEs, and team handoff docs.
 *.md
 !/README.md
+# The active cross-platform plan is a shared, tracked document.
+!/HANDOFF.md
 # HANDOFF rule 9: every benchmark documents its command, hardware and raw output.
 !/bench/**/*.md
 *.txt
