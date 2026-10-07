@@ -121,7 +121,19 @@
     "local_packaged_signature": "Valid / Python Software Foundation",
     "local_packaged_smoke_passed": 14,
     "ci53_backend_matrix": "all four jobs success",
-    "remote_desktop_after_packaging_fix": "pending",
+    "remote_desktop_after_packaging_fix": "signature and backend staging passed in #55; missing fresh Electron binary corrected in follow-up",
     "signature_and_checksum_checks": "mandatory; no bypass"
+  },
+  "ci55_fresh_electron_followup": {
+    "source_run": 37564759195,
+    "remote_python_signature": "Valid / Python Software Foundation",
+    "remote_backend_staging": "passed",
+    "fresh_isolated_electron_install": "passed; version 44.4.3, executable and path metadata verified",
+    "ci_true_local_package": "passed; --publish never",
+    "local_packaged_smoke_passed": 14,
+    "latest_electron_unit_passed": 110,
+    "latest_remote_browser_passed": 115,
+    "latest_remote_browser_skipped": 1,
+    "remote_desktop_after_runtime_install_fix": "pending"
   }
 }

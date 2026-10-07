@@ -87,6 +87,8 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 
 The local package includes Python 3.14.8, pytest and the backend; it starts and stops its own
 loopback service. The renderer never receives the bearer token. This build is unsigned.
+Packaging and Electron development scripts explicitly install the locked Electron runtime;
+`npm ci` alone installs its JavaScript package. Local packaging disables publishing, including in CI.
 See [SECURITY.md](SECURITY.md) for boundary limits and [the handoff](HANDOFF.md)
 for implementation status. The desktop source remains a Windows packaging target.
 

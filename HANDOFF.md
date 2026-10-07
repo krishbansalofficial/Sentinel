@@ -739,3 +739,32 @@ another remote validation run. Logs: `.tmp/ci54-package-fixed.log`,
 All four backend jobs from #53 (Windows/Linux, Python 3.12/3.14) and its dedicated
 Linux kernel sandbox job subsequently completed successfully. The original #53
 failure was confined to desktop, and #54's browser stage is now green.
+
+## CI #55 fresh Electron runtime follow-up (2026-10-06 EDT)
+
+Run 37564759195 verified the signature correction remotely: Valid/Python Software
+Foundation, successful dependency installation, bundled imports and stage audit.
+The next packaging step failed because node_modules/electron/dist was absent.
+Electron 44.4.3's installed package declares install-electron/install.js and no
+postinstall hook; npm ci therefore installs the JavaScript package but does not
+install its binary. The local checkout already had the binary, masking this
+fresh-runner condition.
+
+Added install:electron using the locked package's installer. Both package:dir
+variants invoke it first; predev:electron and preelectron do the same for clean
+checkout development launches. The installer uses the package's checksum manifest
+and existing cache, and skips an already valid install. Local test packaging now
+passes --publish never explicitly, removing electron-builder's implicit CI
+publishing behavior. No credentials, signing or publication permissions are added.
+README documents the fresh-install behavior.
+
+Reproduced a fresh install in an empty owned .tmp directory using the installed
+Electron installer/package/checksums and its existing dependencies. Verified
+that dist/electron.exe, dist/version=44.4.3 and path.txt=electron.exe were created.
+Then rebuilt the complete application with CI=true and confirmed mandatory Python
+signature/checksum verification and disabled publishing. **All 14 packaged
+Electron smoke checks passed**, including actual confined pytest and diff coverage.
+Logs: .tmp/ci55-fresh-electron.log, .tmp/ci55-package-fixed.log and
+.tmp/ci55-electron-fixed.log. Frontend/backend behavior is unchanged since #54's
+115 passing browser cases; this follow-up fixes clean packaging/development setup.
+A normal direct-master push triggers the next remote check.
