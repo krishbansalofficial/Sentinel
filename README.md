@@ -8,8 +8,9 @@
 
 ## Try the regression lab on Linux
 
-Python 3.12+, Git, and Node (for the Node tasks) are required. Install from the checkout
-while the release name and shared license are pending:
+Python 3.12+, Git, and Node (for the Node tasks) are required. The package is
+`sentinel-runtime` (Apache License 2.0). Until the first tagged release is on PyPI
+(`pipx install sentinel-runtime`), install from the checkout:
 
 ```bash
 git clone https://github.com/krishbansalofficial/Sentinel.git
@@ -27,7 +28,18 @@ This smoke test uses a mock agent and explicitly runs hidden tests on the host. 
 Linux agent requires bubblewrap, usable user namespaces and delegated cgroup v2 controllers;
 `sentinel doctor` explains missing prerequisites. Ubuntu's AppArmor setup is documented in
 [the shipped profile](packaging/apparmor/sentinel-bwrap). Windows uses AppContainer and Job
-Objects. General Linux confined verification remains pending; unavailable checks fail closed.
+Objects. Checks run in confined boxes on both platforms; unavailable checks fail closed.
+
+<p align="center">
+  <img src="bench/release/demo/sentinel-tui-evals.gif" width="760"
+       alt="The Sentinel terminal UI: a Change, then the Eval screen flagging a regression">
+</p>
+
+The terminal UI against a real backend holding three recorded backtest runs (mock agent, so
+cost is synthetic; every hidden test ran in the verified Linux sandbox). The Eval screen shows
+the same verdict as `sentinel eval compare`. How it was recorded:
+[`bench/release/demo`](bench/release/demo/README.md); the runs:
+[`bench/regression_detection`](bench/regression_detection/README.md).
 
 | Recorded evaluation | Attempts | Passed | Wilson 95% interval | Boundary |
 | --- | ---: | ---: | --- | --- |
@@ -53,6 +65,7 @@ connected trace. The existing bearer-authenticated Prometheus endpoint is `/api/
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-1f2937.svg" alt="Windows and Linux">
   <img src="https://img.shields.io/badge/status-pre--release-b7791f.svg" alt="Pre-release">
   <img src="https://img.shields.io/badge/version-0.1.0-2563eb.svg" alt="Version 0.1.0">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-2563eb.svg" alt="Apache License 2.0">
   <img src="https://img.shields.io/badge/tests-2%2C200%2B-2f855a.svg" alt="2,200+ tests">
   <img src="https://img.shields.io/badge/threat--model-16%2F16%20reviewed-2f855a.svg" alt="16/16 threat-model findings reviewed">
 </p>
@@ -271,3 +284,7 @@ A few of the load-bearing decisions:
 - **Tamper-evident by construction.** Every mutation and its journal event commit or roll back
   together in one transaction; the journal itself is append-only, hash-chained, and independently
   replay-verifiable.
+
+## License
+
+Sentinel is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE).
