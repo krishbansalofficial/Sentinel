@@ -3,10 +3,27 @@ requires = ["setuptools==84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "change-assurance"
+name = "sentinel-runtime"
 version = "0.1.0"
-description = "Local-first Change Assurance Runtime"
+description = "A change assurance runtime for AI coding agents: verified boundaries, signed evidence, and an agent regression lab"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Krish Bansal" }]
 requires-python = ">=3.12"
+keywords = ["ai-agents", "sandbox", "evals", "supply-chain", "provenance"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Security",
+  "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
   "fastapi==0.141.1",
   "pydantic==2.13.5",
@@ -17,6 +34,10 @@ dependencies = [
   # macOS keeps provider credentials in the Keychain through keyring (the default store there).
   "keyring==25.7.0; sys_platform == 'darwin'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/krishbansalofficial/Sentinel"
+Issues = "https://github.com/krishbansalofficial/Sentinel/issues"
 
 [project.scripts]
 sentinel = "backend.app.cli.main:main"
@@ -43,6 +64,8 @@ keyring = [
 
 [tool.setuptools.packages.find]
 include = ["backend*"]
+# The test suite stays in the source tree; the published wheel carries only the runtime.
+exclude = ["backend.tests*"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
