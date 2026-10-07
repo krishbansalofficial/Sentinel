@@ -1,15 +1,15 @@
 # Sentinel: Handoff for the Next Build Phase
 
 Owner: Krish Bansal (kb). Fork: `krishbansalofficial/Sentinel` (upstream `csshlok/Sentinel`).
-Written: 2026-10-03. Status updated 2026-10-04. Read this whole file before touching code.
+Written: 2026-10-03. Status updated 2026-10-06. Read this whole file before touching code.
 
 ## 0. Status at a glance (read first)
 
 | Phase | State | Where |
 | --- | --- | --- |
 | 0. Boot and test on Linux/macOS | **Done**, pushed | commits `cd1bf89`..`8236ca1` |
-| 1. Verified Linux agent boundary | **Done except Linux check boxes**, pushed | `0811441`..`96912e1` |
-| 2. `sentinel eval` | **Groundwork pushed** (stats, suite, runner, drivers); CLI, store, report, seed suite remain | `5e439dc` |
+| 1. Verified Linux agent boundary | **Done except Linux check boxes**; CI `linux-sandbox` job green (fork bomb included) | `0811441`..`c70b9e5` |
+| 2. `sentinel eval` | **Mostly done**: stats, suite, runner, drivers, CLI (`run/compare/report`), HTML report, 30-task seed suite. Remaining: backend eval store + API routes + journal events | `5e439dc`, `6a535c8` |
 | 3. Queue and crash recovery | Not started | |
 | 4. Observability | Not started | |
 | 5. Adversarial fuzzer | Not started | |
@@ -63,11 +63,11 @@ not available in containers (do not change `.wslconfig`: it restarts WSL and Doc
 * Evals: `backend/app/evals/{stats,suite,runner,agents,hidden}.py`, tests in `backend/tests/evals/`.
 
 ### Remaining work, in order
-1. **Phase 2 completion**: eval store (additive migration `eval_runs`, `eval_results`, journal
-   events on each attempt's Change), API routes, `sentinel eval run|compare|report`
-   (`--fail-on-regression` exits nonzero), JSON + static HTML report, 30-50 seeded tasks under
-   `evals/tasks/` each with `solution/` (suite test: fixture fails, fixture+solution passes),
-   tests for `SandboxHiddenTestRunner` (Linux) and `VerificationHiddenTestRunner` (Windows).
+1. **Phase 2 completion**: backend eval store (additive migration `eval_runs`, `eval_results`,
+   journal events on each attempt's Change), API routes and `sentinel eval run --record`;
+   tests for `SandboxHiddenTestRunner` (Linux) and `VerificationHiddenTestRunner` (Windows);
+   a first real `--agent claude` run (needs a Claude login) to fill the eval results table.
+   Ubuntu 24.04 hosts need `packaging/apparmor/sentinel-bwrap` (read its trade-off note).
 2. **Linux confined check boxes** (Phase 1 item 6): a Linux `BoxPlatform` on the sandbox with
    network off, Linux facts in the `check.confined_run` payload, Passport `confined_checks`
    accepting them. Until then Linux checks fail closed.
@@ -260,8 +260,8 @@ Acceptance (all are automated tests that must pass on `ubuntu-latest`):
 - [x] Agent cannot write outside the workspace clone and staged home.
 - [x] Agent cannot read `~/.ssh`, `~/.aws`, the Sentinel store directory, or the API token.
 - [x] No network when the profile lacks it (connect to 1.1.1.1:443 fails).
-- [ ] A fork bomb is stopped by `pids.max`; the host stays responsive. (Test written; runs only
-      in CI's `linux-sandbox` job, which had not run yet at the last update.)
+- [x] A fork bomb is stopped by `pids.max`; the host stays responsive. (CI `linux-sandbox` job,
+      run for `c70b9e5`.)
 - [x] Double fork plus `setsid` daemons are still attributed and killed on stop.
 - [x] Pause freezes the whole tree (verify CPU time stops increasing, like the Windows test).
 - [x] If `bwrap` is missing or user namespaces are disabled, launch fails closed with a clear
@@ -310,9 +310,8 @@ Acceptance:
 - [ ] `sentinel eval run --suite evals/tasks --agent claude --k 3` produces a results report
       (JSON plus a static HTML page).
 - [ ] Hidden tests are provably absent from the agent's workspace (test asserts it).
-- [ ] `compare` detects an injected regression (a deliberately broken prompt) and does not
-      flag two runs of the same config. (Proven at the stats/runner level with the mock agent;
-      the `compare` command itself is not built yet.)
+- [x] `compare` detects an injected regression (a deliberately broken prompt) and does not
+      flag two runs of the same config. (Mock agent, `test_seed_suite_and_cli.py`; exit 3.)
 - [x] Unit tests for the Wilson interval and bootstrap against known values.
 
 ### Phase 3: Concurrent execution with crash recovery (about 1 to 2 weeks)
