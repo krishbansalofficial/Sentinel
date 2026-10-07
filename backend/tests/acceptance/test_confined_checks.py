@@ -27,8 +27,8 @@ and port attempts. The ``npm install`` variant (an agent-authored ``postinstall`
 offline, with a vendored dependency tarball) covers the same file and port
 attempts plus the Credential Manager and CNG key attempts, which a Node script
 makes through PowerShell children since Node has no Win32 FFI.
-The unsupported-toolchain test uses a stand-in ``cargo.bat`` on PATH (no Rust
-toolchain is needed to prove how Sentinel routes ``cargo``).
+The unsupported-toolchain test uses a stand-in ``uv.bat`` on PATH (no Rust
+toolchain is needed to prove how Sentinel routes ``uv``).
 """
 
 from __future__ import annotations
@@ -750,10 +750,10 @@ def test_npm_install_postinstall_escapes_are_denied_through_the_api(
 
 # ------------------------------------------------------------------ unsupported toolchain
 
-CARGO_STANDIN = (
+UV_STANDIN = (
     "@echo off\r\n"
-    "echo stand-in cargo %*\r\n"
-    "echo ran at user authority> \"%CD%\\cargo-ran.txt\"\r\n"
+    "echo stand-in uv %*\r\n"
+    "echo ran at user authority> \"%CD%\\uv-ran.txt\"\r\n"
     "exit /b 0\r\n"
 )
 
@@ -767,9 +767,9 @@ def test_unsupported_toolchain_needs_the_opt_in_and_is_reported_unconfined(
     api = live_api
     toolchain = tmp_path / "stand-in-toolchain"
     toolchain.mkdir()
-    (toolchain / "cargo.bat").write_text(CARGO_STANDIN, encoding="ascii", newline="")
+    (toolchain / "uv.bat").write_text(UV_STANDIN, encoding="ascii", newline="")
     monkeypatch.setenv("PATH", str(toolchain) + os.pathsep + os.environ["PATH"])
-    assert Path(shutil.which("cargo")).parent == toolchain
+    assert Path(shutil.which("uv")).parent == toolchain
 
     repo = make_repo(tmp_path / "repo", {"src/lib.rs": "pub fn add() {}\n"})
     change_id = _create_change(api, repo, schema_version=3, max_risk="HIGH",
@@ -777,22 +777,22 @@ def test_unsupported_toolchain_needs_the_opt_in_and_is_reported_unconfined(
 
     # Without the delegated opt-in: refused before anything runs.
     plain = _actor(api, change_id, ["change.legacy_verify"])
-    refused = _verify(api, change_id, plain, "cargo", ["test"])
+    refused = _verify(api, change_id, plain, "uv", ["test"])
     assert refused.status_code == 409, refused.text
     assert refused.json()["error"]["code"] == "CHECK_TOOLCHAIN_UNCONFINED"
-    assert not (repo / "cargo-ran.txt").exists()
+    assert not (repo / "uv-ran.txt").exists()
     assert _check_runs(api, change_id) == []
 
     # With checks.unconfined on a HIGH-risk Change: it runs, and is reported UNCONFINED.
     delegated = _actor(api, change_id, ["change.legacy_verify", "checks.unconfined"])
-    response = _verify(api, change_id, delegated, "cargo", ["test"])
+    response = _verify(api, change_id, delegated, "uv", ["test"])
     assert response.status_code == 200, response.text
     verification = response.json()["verification"]
     assert verification["status"] == "PASSED"
-    assert "stand-in cargo test" in verification["stdout"]
+    assert "stand-in uv test" in verification["stdout"]
     assert verification["boundary"] == "UNCONFINED"
     # Honest: an unconfined run really runs in the user repository at user authority.
-    assert (repo / "cargo-ran.txt").exists()
+    assert (repo / "uv-ran.txt").exists()
     runs = _check_runs(api, change_id)
     assert [run["boundary"] for run in runs] == ["UNCONFINED"]
     assert runs[0]["id"] == verification["check_run_id"]

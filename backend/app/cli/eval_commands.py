@@ -88,6 +88,8 @@ def run_command(
         extra = ["--model", model] if model else []
         driver = ApiAgentDriver(client, adapter="claude", executable="claude",
                                 args_for=lambda prompt: ["-p", prompt, "--output-format", "json",
+                                                         "--permission-mode", "acceptEdits",
+                                                         "--allowedTools", "Read Edit Write",
                                                          *extra])
     else:
         raise typer.BadParameter("--agent must be mock or claude")

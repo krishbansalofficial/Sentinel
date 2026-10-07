@@ -9,7 +9,7 @@
 ## Try the regression lab on Linux
 
 Python 3.12+, Git, and Node (for the Node tasks) are required. Install from the checkout
-while the release name and shared license are pending:
+while the release name and license metadata are pending:
 
 ```bash
 git clone https://github.com/krishbansalofficial/Sentinel.git
@@ -27,7 +27,7 @@ This smoke test uses a mock agent and explicitly runs hidden tests on the host. 
 Linux agent requires bubblewrap, usable user namespaces and delegated cgroup v2 controllers;
 `sentinel doctor` explains missing prerequisites. Ubuntu's AppArmor setup is documented in
 [the shipped profile](packaging/apparmor/sentinel-bwrap). Windows uses AppContainer and Job
-Objects. General Linux confined verification remains pending; unavailable checks fail closed.
+Objects. Linux confined verification is implemented; unavailable boundaries and runtimes fail closed.
 
 | Recorded evaluation | Attempts | Passed | Wilson 95% interval | Boundary |
 | --- | ---: | ---: | --- | --- |
@@ -64,8 +64,29 @@ disposable AppContainer, records every mutation in a hash-chained journal, and p
 portable Change Passport that says — with evidence, not with the agent's own word — exactly what
 happened.
 
-It is a local-first Windows runtime: a FastAPI backend, a Textual terminal UI, a CLI, and a
+It is a local-first Windows and Linux runtime: a FastAPI backend, a Textual terminal UI, a CLI, and a
 native desktop app, all driven from the same frozen API contract.
+
+## Run the Windows desktop
+
+Use Node 24+ and Python 3.12+ from this checkout:
+
+```powershell
+python -m pip install -e ".[test,tui,keyring,telemetry]"
+cd apps/desktop
+npm ci
+npm test
+npm run package:dir
+$env:SENTINEL_SMOKE_REAL_CHECKS = '1'
+npm run test:electron:smoke
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+.\release\win-unpacked\Sentinel.exe
+```
+
+The local package includes Python 3.14.8, pytest and the backend; it starts and stops its own
+loopback service. The renderer never receives the bearer token. This build is unsigned.
+See [SECURITY.md](SECURITY.md) for boundary limits and [the handoff](HANDOFF.md)
+for implementation status. The desktop source remains a Windows packaging target.
 
 ## Why Sentinel exists
 
@@ -244,8 +265,8 @@ operations across 84 routes, described by 147 typed schemas.
 
 Sentinel's authority model isn't a formality bolted on afterward. A full attack-surface review
 (credential broker, identity/delegation/policy, tool registry, execution/journal/replay,
-recovery/passport, API auth boundary) covers 16 findings: 15 fixed and one closed as an accepted
-design decision, with zero left open (see [`THREAT_MODEL_FINDINGS.md`](THREAT_MODEL_FINDINGS.md)).
+recovery/passport, API auth boundary) originally covered 16 findings. The fork review records additional fixes and current
+limits (see [the fork security review](SECURITY_REVIEW.md)).
 A few of the load-bearing decisions:
 
 - **A verified AppContainer boundary.** Claude Code launches through the documented AppContainer

@@ -236,6 +236,8 @@ test("200% zoom (512x340 CSS px) with reduced motion remains usable", async ({ p
 });
 
 test("opening and closing dialogs and the palette 40 times does not leak DOM or break focus", async ({ page }) => {
+  // Eighty animated dismissals can exceed the default deadline on a loaded host.
+  test.setTimeout(60_000);
   const { errors } = await open(page, "/changes", { changes: [makeChange(1)] });
   await expect(page.locator("main").getByText("Change number 1")).toBeVisible();
   const count = () => page.evaluate(() => document.querySelectorAll("*").length);

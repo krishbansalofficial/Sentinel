@@ -46,7 +46,7 @@ runs:
       env:
         PYTHON: ${{ steps.python.outputs.python-path }}
       # Exact pins from pyproject.toml; the verifier needs nothing else.
-      run: '"$PYTHON" -m pip install --disable-pip-version-check --quiet "cryptography==47.0.0" "pydantic==2.13.5"'
+      run: '"$PYTHON" -m pip install --disable-pip-version-check --quiet "cryptography==50.0.2" "pydantic==2.13.5"'
     - name: Verify Passport
       id: verify
       shell: bash

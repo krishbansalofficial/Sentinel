@@ -356,6 +356,7 @@ PROCESS_STARTING_EXECUTION_MODULES = {
     "launcher.py": "the supervised agent launcher (agent runs, not checks)",
     "check_box.py": "confined check runs (spawn_appcontainer_supervised via the box)",
     "check_runtime.py": "interpreter facts probe (-I -S, temp cwd, no project code)",
+    "check_toolchains.py": "rustup SDK resolution (minimal environment, temporary cwd, no project config)",
     "commands.py": "the delegated checks.unconfined opt-in path only",
     "tool_probe.py": "tool --version probes (PATH tools, not repository code)",
     "signature.py": "Authenticode check of a registered tool",

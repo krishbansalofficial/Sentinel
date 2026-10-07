@@ -129,6 +129,8 @@ def host_resolver(executable: str, *, interpreter=None, source_root=None) -> Res
         cli = node.parent / "node_modules" / "npm" / "bin" / "npm-cli.js"
         if not cli.is_file() and os.name != "nt":  # Unix layout: <prefix>/lib/node_modules/npm
             cli = node.parent.parent / "lib" / "node_modules" / "npm" / "bin" / "npm-cli.js"
+        if not cli.is_file() and os.name != "nt":  # Debian/Ubuntu's system npm layout
+            cli = node.parent.parent / "share" / "nodejs" / "npm" / "bin" / "npm-cli.js"
         if not cli.is_file():
             raise check_runtime_unavailable(executable, "npm-cli.js was not found")
         prefix = (str(node), str(cli))

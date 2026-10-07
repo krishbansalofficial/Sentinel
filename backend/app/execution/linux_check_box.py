@@ -21,8 +21,8 @@ The resolver binds the host toolchain, never the repository's own: Python
 binds the interpreter's venv and base prefix, Node its install prefix plus the
 project's ``node_modules`` at ``tree/node_modules``, Go its GOROOT (offline,
 caches in scratch). A bind that would expose ``/``, the user's home, the
-repository or the Sentinel store is refused; cargo, dotnet and uv stay
-refused as on Windows. Nothing falls back to the host (D-01).
+repository or the Sentinel store is refused. Cargo and .NET bind their complete
+SDK installs read-only and keep caches in scratch; uv remains refused. Nothing falls back to the host (D-01).
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ import stat
 import sys
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -52,9 +52,13 @@ from backend.app.execution.check_toolchains import (
     ResolvedCheckRuntime,
     _find_host_node,
     _find_host_tool,
+    _find_real_cargo,
+    _sdk_runtime,
+    RuntimeBuilders,
     check_runtime_unavailable,
     check_toolchain_unconfined,
 )
+from backend.app.execution.check_runtime import RuntimeSnapshot
 from backend.app.execution.linux_sandbox import (
     LINUX_IDENTITY_PREFIX,
     SandboxSpec,
@@ -357,6 +361,8 @@ class LinuxToolFinders:
 
     node: Callable[[Path | None], Path | None] = _find_host_node
     go: Callable[[Path | None], Path | None] = lambda root: _find_host_tool("go", root)
+    cargo: Callable[[Path | None], Path | None] = _find_real_cargo
+    dotnet: Callable[[Path | None], Path | None] = lambda root: _find_host_tool("dotnet", root)
 
 
 def linux_resolve_check_runtime(
@@ -384,6 +390,19 @@ def linux_resolve_check_runtime(
 
     if toolchain == PYTHON_TOOLCHAIN:
         return _python_runtime(executable, interpreter, bind)
+    if toolchain in {"cargo", "dotnet"}:
+        def install(host: Path) -> RuntimeSnapshot:
+            directory = host.parent.parent if toolchain == "cargo" else host.parent
+            required = ("bin/rustc", "lib/rustlib") if toolchain == "cargo" else ("host", "sdk", "shared", "packs")
+            if not all((directory / name).exists() for name in required):
+                raise check_runtime_unavailable(executable, "the executable is not inside a complete SDK")
+            return RuntimeSnapshot(directory, "", 0)
+        resolved = _sdk_runtime(toolchain, source, RuntimeBuilders(
+            cargo=install, dotnet=install, find_cargo=finders.cargo, find_dotnet=finders.dotnet), windows=False)
+        directory = resolved.runtime.snapshots[0].path
+        return replace(resolved, runtime=replace(
+            resolved.runtime, snapshots=(), readonly_binds=_unique([bind(directory)]),
+            limitations=(*resolved.runtime.limitations, "The SDK is bound read-only from the host installation.")))
     if toolchain == GO_TOOLCHAIN:
         host_go = finders.go(source)
         if host_go is None:

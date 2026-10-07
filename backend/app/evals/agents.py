@@ -124,14 +124,24 @@ class ApiAgentDriver:
         change = self._client.create_change(f"eval {task.id} #{attempt}", task.prompt,
                                             str(repository))
         change_id = UUID(change["id"])
+        if task.allowed_paths or task.required_checks:
+            self._client.update_change_contract(
+                change_id, expected_revision=change["revision"],
+                allowed_paths=list(task.allowed_paths) if task.allowed_paths else ["**"],
+                required_checks=list(task.required_checks))
         human = self._client.create_actor("HUMAN", "Sentinel eval operator")
         agent = self._client.create_actor("AGENT", f"eval {self._adapter}")
         self._client.create_delegation(
             grantor_id=UUID(human["id"]), grantee_id=UUID(agent["id"]), change_id=change_id,
-            scopes=["agent.launch"], ttl_seconds=max(600, (self._timeout or task.timeout_seconds) * 2))
+            scopes=["agent.launch", "workspace.apply", "change.legacy_verify"],
+            ttl_seconds=max(600, (self._timeout or task.timeout_seconds) * 2))
         report = RunFlow(self._client, confirm=lambda _preview: True).run(
             change_id, UUID(agent["id"]), RunOptions(
-                executable=self._executable, args=self._args_for(prompt), adapter=self._adapter,
+                executable=self._executable,
+                args=[*self._args_for(prompt), *(
+                    ["--max-budget-usd", str(task.budget_usd)]
+                    if self._adapter == "claude" and task.budget_usd is not None else [])],
+                adapter=self._adapter,
                 environment_keys=self._environment_keys,
                 timeout_seconds=self._timeout or task.timeout_seconds, apply=True,
                 issue_passport=self._issue_passport))
@@ -147,15 +157,18 @@ class ApiAgentDriver:
         refusals = (int(bool(preview.detail.get("refusal_reason")))
                     if preview is not None and preview.status != "skipped" else None)
         passport = steps.get("passport")
+        status = record.get("status") or (launch.detail.get("agent_status") if launch else "ERROR")
+        if status == "PASSED" and report.outcome != "ok":
+            status = "ERROR"
         return AgentOutcome(
-            status=record.get("status") or (launch.detail.get("agent_status") if launch else "ERROR"),
+            status=status,
             wall_seconds=time.monotonic() - started, cost_usd=cost, input_tokens=input_tokens,
             output_tokens=output_tokens,
             descendant_count=len(record.get("descendant_processes") or []) if record else None,
             policy_decision=(passport.detail.get("policy_decision") if passport else None),
             forbidden_refusals=refusals,
             passport_id=(passport.detail.get("payload_digest") if passport else None),
-            change_id=str(change_id), run_id=run_id,
+            change_id=str(change_id), run_id=run_id, actor_id=str(agent["id"]),
             boundary=(passport.detail.get("execution_boundary") if passport else None),
             detail=f"run outcome {report.outcome}",
         )

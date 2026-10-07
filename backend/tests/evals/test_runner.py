@@ -198,3 +198,18 @@ def test_malformed_tasks_are_refused(tmp_path: Path, edit, match) -> None:
 ])
 def test_claude_json_costs_and_tokens_or_unknown(stdout, expected) -> None:
     assert parse_claude_json(stdout) == expected
+
+
+
+@pytest.mark.parametrize("agent_status,cost", [("FAILED", None), ("TIMED_OUT", None), ("UNKNOWN", None), ("PASSED", 1.0)])
+def test_unsuccessful_or_over_budget_agent_cannot_pass_hidden_tests(tmp_path, agent_status, cost):
+    from dataclasses import replace
+    directory = make_task(tmp_path / "suite", "budget", a=1, b=2)
+    task = replace(load_task(directory), budget_usd=0.25)
+    class Driver:
+        def run(self, *_args, **_kwargs): return AgentOutcome(agent_status, 1.0, cost_usd=cost)
+    class Hidden:
+        def run(self, *_args, **_kwargs): pytest.fail("hidden tests must not run after failed agent or budget breach")
+    result = EvalRunner(Driver(), Hidden()).run([task], config=AgentConfig("x"), k=1, suite="s").results[0]
+    assert result.status == ERROR
+    assert result.hidden is None

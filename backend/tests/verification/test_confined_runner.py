@@ -122,14 +122,14 @@ def test_a_confined_run_needs_a_change_and_a_box_manager(setup, runner_type) -> 
 def test_unconfined_toolchain_needs_the_opt_in(setup, runner_type) -> None:
     repo, database, boxes, windows = setup
     with pytest.raises(AppError) as error:
-        runner_type(boxes).run(str(repo), VerificationRequest(executable="cargo", args=["test"]),
+        runner_type(boxes).run(str(repo), VerificationRequest(executable="uv", args=["test"]),
                                100, change_id=_make_change(database, repo))
     assert error.value.code == "CHECK_TOOLCHAIN_UNCONFINED"
     assert windows.spawned == []
 
 
 def _host_python_as(monkeypatch, runner_type) -> None:
-    """Make the unconfined resolver return this interpreter for 'cargo' (no cargo needed)."""
+    """Make the unconfined resolver return this interpreter for 'uv' (no uv needed)."""
 
     if runner_type is SubprocessVerificationRunner:
         monkeypatch.setattr("backend.app.verification.runner.resolve_executable",
@@ -146,7 +146,7 @@ def test_opted_in_unconfined_run_is_journaled_as_unconfined(setup, runner_type,
     change_id = _make_change(database, repo)
     _host_python_as(monkeypatch, runner_type)
     checked = runner_type(boxes).run_checked(
-        str(repo), VerificationRequest(executable="cargo", args=[
+        str(repo), VerificationRequest(executable="uv", args=[
             "-c", "import os; print(os.getcwd())"]),
         4096, change_id=change_id, allow_unconfined=True)
     assert checked.result.status is VerificationStatus.PASSED
@@ -161,7 +161,7 @@ def test_opted_in_unconfined_run_is_journaled_as_unconfined(setup, runner_type,
     for event in events:
         payload = event["payload"]
         assert payload["boundary"] == "UNCONFINED"
-        assert payload["executable"] == "cargo"
+        assert payload["executable"] == "uv"
         assert payload["check_run_id"] == str(checked.check_run_id)
         assert "print" not in json.dumps(payload)  # digests only, never argv text
     assert events[1]["payload"]["exit_code"] == 0
@@ -189,7 +189,7 @@ def test_unconfined_intent_is_journaled_before_the_command_runs(setup, runner_ty
     monkeypatch.setattr("backend.app.execution.commands.run_verification_command", crashing_run)
     with pytest.raises(RuntimeError):
         runner_type(boxes).run_checked(
-            str(repo), VerificationRequest(executable="cargo", args=["test"]),
+            str(repo), VerificationRequest(executable="uv", args=["test"]),
             4096, change_id=change_id, allow_unconfined=True)
     assert [[(e["type"], e["payload"]["phase"]) for e in events]
             for events in seen_at_start] == [[("check.unconfined_run", "started")]]
@@ -213,7 +213,7 @@ def test_a_failed_intent_append_runs_nothing(setup, runner_type, monkeypatch) ->
     monkeypatch.setattr(boxes, "record_unconfined_run", refuse)
     with pytest.raises(AppError) as error:
         runner_type(boxes).run_checked(
-            str(repo), VerificationRequest(executable="cargo", args=["test"]),
+            str(repo), VerificationRequest(executable="uv", args=["test"]),
             4096, change_id=change_id, allow_unconfined=True)
     assert error.value.code == "JOURNAL_APPEND_FAILED"
     assert ran == []
@@ -224,7 +224,7 @@ def test_a_failed_intent_append_runs_nothing(setup, runner_type, monkeypatch) ->
 
 def _client_change(client, repo: Path, *, max_risk: str = "MEDIUM") -> str:
     response = client.post("/api/v1/changes", json={
-        "title": "Unconfined opt-in", "intent": "Run cargo", "repository_path": str(repo),
+        "title": "Unconfined opt-in", "intent": "Run uv", "repository_path": str(repo),
         "contract": {"max_risk": max_risk},
     })
     assert response.status_code == 201, response.text
@@ -255,20 +255,20 @@ def test_api_unconfined_toolchain_requires_the_delegated_scope(tmp_path, monkeyp
         # High-risk Change, but the actor lacks checks.unconfined: refused before running.
         change_id = _client_change(client, repo, max_risk="HIGH")
         actor = _actor(client, change_id, ["change.legacy_verify"])
-        response = _verify(client, change_id, actor, "cargo", ["-c", "print('ran')"])
+        response = _verify(client, change_id, actor, "uv", ["-c", "print('ran')"])
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "CHECK_TOOLCHAIN_UNCONFINED"
 
         # Delegated, but the Change admits only MEDIUM risk: still refused.
         low = _client_change(client, repo)
         actor = _actor(client, low, ["change.legacy_verify", "checks.unconfined"])
-        response = _verify(client, low, actor, "cargo", ["-c", "print('ran')"])
+        response = _verify(client, low, actor, "uv", ["-c", "print('ran')"])
         assert response.status_code == 409
         assert response.json()["error"]["details"]["policy_reason"] == "RISK_TOO_HIGH"
 
         # Delegated on a HIGH-risk Change: runs, journaled UNCONFINED.
         actor = _actor(client, change_id, ["change.legacy_verify", "checks.unconfined"])
-        response = _verify(client, change_id, actor, "cargo", ["-c", "print('ran')"])
+        response = _verify(client, change_id, actor, "uv", ["-c", "print('ran')"])
         assert response.status_code == 200, response.text
         assert response.json()["verification"]["status"] == "PASSED"
         database = app.state.check_boxes.repository.database

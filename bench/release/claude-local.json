@@ -1,0 +1,44 @@
+{
+  "completed_at": "2026-10-07T00:26:15.727275+00:00",
+  "config": {
+    "agent": "claude",
+    "model": null,
+    "name": "claude-local-confined",
+    "prompt_template": "{prompt}",
+    "settings": {}
+  },
+  "id": "5e001f93-2e2c-44f0-81be-f7715a6f2516",
+  "k": 1,
+  "results": [
+    {
+      "agent": {
+        "actor_id": "3b209a66-8580-414a-9144-ed62976254a3",
+        "boundary": null,
+        "change_id": "a0c5ed54-f491-48d5-be6b-47e566552ceb",
+        "cost_usd": 0.0,
+        "descendant_count": 28,
+        "detail": "run outcome stopped",
+        "forbidden_refusals": null,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "passport_id": null,
+        "policy_decision": null,
+        "run_id": "d5749cd2-9ef9-4a45-94b0-56c92dc3843c",
+        "status": "FAILED",
+        "wall_seconds": 10.236982400005218
+      },
+      "attempt": 1,
+      "error": "RuntimeError: agent did not finish successfully (FAILED)",
+      "hidden": null,
+      "hidden_tests_absent": true,
+      "run_id": "5e001f93-2e2c-44f0-81be-f7715a6f2516",
+      "started_at": "2026-10-07T00:26:15.716142+00:00",
+      "status": "ERROR",
+      "task_id": "op-add",
+      "wall_seconds": 10.547274900018238
+    }
+  ],
+  "schema": "sentinel-eval-run/1",
+  "started_at": "2026-10-07T00:26:05.168837+00:00",
+  "suite": "C:\\Users\\krish\\Sentinel-fork\\evals\\tasks"
+}

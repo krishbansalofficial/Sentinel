@@ -7,7 +7,7 @@ silently drop a field)::
     title = "Fix the off-by-one in paginate()"
     prompt = "..."                    # what the agent is asked to do
     timeout_seconds = 600
-    budget_usd = 0.50                 # optional; reported, not enforced here
+    budget_usd = 0.50                 # optional; Claude receives a cap, runner rejects known overruns
     allowed_paths = ["src/**"]        # optional Change Contract allowed paths
     required_checks = ["pytest"]      # optional
     hidden_test_command = ["python", "-m", "pytest", "-q", "hidden_tests"]

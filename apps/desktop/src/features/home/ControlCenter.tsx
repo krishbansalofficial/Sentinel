@@ -3,7 +3,7 @@ import { Bot, GitBranch, GitPullRequestArrow, Users, Wrench, type LucideIcon } f
 import { useState } from "react";
 import { Notice, Section } from "@/components/product";
 import { Button } from "@/components/ui/button";
-import { WALKTHROUGH_KEY } from "@/features/workspace/WalkthroughPage";
+import { WALKTHROUGH_KEY } from "@/lib/walkthrough";
 
 const TILES: { to: string; title: string; text: string; icon: LucideIcon }[] = [
   { to: "/changes", title: "Changes", text: "Create a Change, capture evidence, verify, and export a passport.", icon: GitPullRequestArrow },

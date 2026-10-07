@@ -13,14 +13,10 @@ import { agentRunInfo, formatRelative, formatTime } from "@/lib/status";
 import { adaptersQuery, agentsQuery, attachAgent, isActiveRun, launchAgent, pauseAgent, resumeAgent, stopAgent } from "@/services/actions";
 import { changeKeys } from "@/services/changes";
 import { useActors } from "@/features/authority/useActors";
+import { splitArgs } from "@/lib/arguments";
 
 /** Splits an argument string the way a shell would for simple cases: whitespace-separated, double or single quotes group words. */
-export function splitArgs(raw: string): string[] {
-  const out: string[] = [];
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  for (let m = re.exec(raw); m; m = re.exec(raw)) out.push(m[1] ?? m[2] ?? m[3] ?? "");
-  return out;
-}
+export { splitArgs } from "@/lib/arguments";
 
 export function AgentsTab() {
   const changeId = useParams({ from: "/changes/$changeId" }).changeId;

@@ -376,6 +376,16 @@ def _proc_identity(pid: int, proc_root: Path) -> tuple[int | None, str | None, s
     return (parent if parent and parent > 0 else None), exe, cmdline
 
 
+def capture_linux_sandbox(process, spec: SandboxSpec, *, timeout: float,
+                          limit: int, on_chunk):
+    """Bound output from an already launched sandbox; never start a host child."""
+    from backend.app.execution._process import capture
+
+    return capture(spec.argv, cwd=spec.cwd, env=spec.env, timeout=timeout,
+                   max_timeout=3600, limit=limit, on_chunk=on_chunk,
+                   process_factory=lambda *_: process._popen)
+
+
 class CgroupSession:
     """Descendant attribution from cgroup membership (the Job Object session's twin)."""
 

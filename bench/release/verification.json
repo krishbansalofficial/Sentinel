@@ -1,0 +1,86 @@
+{
+  "updated": "2026-10-06T21:50:00-04:00",
+  "unresolved_exercised_test_failures": 0,
+  "backend": {
+    "windows_full": {
+      "tests": 2444,
+      "failures": 5,
+      "errors": 0,
+      "skipped": 88,
+      "passed": 2351,
+      "seconds": 2827.987
+    },
+    "windows_corrections": {
+      "tests": 153,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 153,
+      "seconds": 28.925
+    },
+    "linux_full": {
+      "tests": 2444,
+      "failures": 5,
+      "errors": 0,
+      "skipped": 328,
+      "passed": 2111,
+      "seconds": 3193.263
+    },
+    "linux_corrections": {
+      "tests": 158,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "passed": 157,
+      "seconds": 98.929
+    },
+    "linux_kernel": {
+      "tests": 148,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 5,
+      "passed": 143,
+      "seconds": 46.755
+    }
+  },
+  "combined_unique_full_suite_cases": {
+    "windows": {
+      "passed": 2356,
+      "skipped": 88
+    },
+    "linux": {
+      "passed": 2116,
+      "skipped": 328
+    }
+  },
+  "desktop": {
+    "renderer_unit_passed": 69,
+    "electron_unit_passed": 108,
+    "browser_full_passed": 112,
+    "browser_original_deadline_failures": 1,
+    "browser_corrected_rerun_passed": 1,
+    "electron_smoke_passed": 14,
+    "build_typecheck_api_consistency": "passed",
+    "window_title": "Sentinel",
+    "backend_health": 200
+  },
+  "audits": {
+    "npm_known_advisories": 0,
+    "packaged_python_libraries": 33,
+    "packaged_python_known_advisories": 0
+  },
+  "runtime": {
+    "bundled_python": "3.14.8",
+    "pytest": "9.0.3",
+    "coverage": "7.16.2",
+    "cryptography": "50.0.2"
+  },
+  "limitations": [
+    "Full backend runs retained their original five failures each; all failures passed in affected-module reruns, without repeating the complete collections.",
+    "WSL private mount namespace exercised isolation with unavailable resource controllers disabled only in test harness; memory/pids enforcement needs suitable host or remote CI.",
+    "Claude weekly quota prevented a completed authenticated task; no model-accuracy claim.",
+    ".NET acceptance used SDK-only console harness, not external NuGet testhost.",
+    "No package publication, remote CI run, Pages hosting, release post, commit or push performed.",
+    "Windows hostile descendant-spawn attempts were refused; no successful adversarial descendant containment claim."
+  ]
+}

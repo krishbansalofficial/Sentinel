@@ -648,7 +648,7 @@ def test_a_relative_or_missing_interpreter_is_refused(tmp_path) -> None:
         assert raised.value.code == "CHECK_RUNTIME_UNAVAILABLE"
 
 
-@pytest.mark.parametrize("executable", ["cargo", "dotnet", "uv", "bash"])
+@pytest.mark.parametrize("executable", ["uv", "bash"])
 def test_unconfined_toolchains_stay_refused(executable) -> None:
     with pytest.raises(AppError) as raised:
         linux_resolve_check_runtime(executable)

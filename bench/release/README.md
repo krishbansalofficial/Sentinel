@@ -17,8 +17,8 @@ ranked as comparable. Only summary data is published; prompts, output and tokens
 After review, configure GitHub Pages from an approved branch/folder and commit that page there.
 Hosting has not been enabled or published during this implementation.
 
-Before release: obtain csshlok's license agreement; select/register the package name; run an
-authenticated Claude benchmark; capture a real walkthrough GIF; verify both CI platforms;
+Before release: record license metadata preserving upstream attribution; select/register the package name; run an
+authenticated Claude benchmark; verify both CI platforms;
 review the generated leaderboard; publish the package/page; then submit launch posts.
 
 Draft launch copy (fill in only measured data):
@@ -31,3 +31,20 @@ signed evidence of their changes. Its regression lab runs hidden-test tasks, rep
 
 No launch messages have been sent. Adoption tracking starts with unknown values in
 `bench/adoption.csv`; fill them from dated, attributable measurements after release.
+
+
+Fork verification on 2026-10-06: `claude-local.json` and `claude-local.html` record
+one real authenticated `op-add` attempt. The agent launched under a verified AppContainer,
+but the provider refused it because the account's weekly quota was exhausted. Cost
+was reported as zero. This is an error result, not a model benchmark. Repeat when
+provider quota is available.
+
+`claude-local-launch.json` preserves the sanitized backend launch record. No
+Passport was issued after the failed run, so the evaluation report's agent
+boundary is null and its hidden-check result is absent. The separate launch
+record describes the verified AppContainer token and Job Object; it does not
+claim a completed benchmark or a signed Passport.
+
+A real packaged Electron screen tour was captured on 2026-10-06: `walkthrough.gif`
+and the original `walkthrough/*.png` screens. The isolated profile contains no
+synthetic benchmark results or user repositories.

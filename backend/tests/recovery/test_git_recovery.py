@@ -5,6 +5,7 @@ import subprocess
 import threading
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -356,7 +357,8 @@ def test_real_recovery_execute_terminates_a_live_supervised_tree(tmp_path) -> No
     change = _seed_change_and_checkpoint(database, repo, baseline_sha, baseline_sha)
     launcher = AgentLauncher()
     holder: dict[str, object] = {}
-    child = "import time; time.sleep(30)"
+    ready = Path(repo) / "child-ready"
+    child = "import os,time; from pathlib import Path; Path('child-ready').write_text(str(os.getpid())); time.sleep(30)"
     parent = (
         "import subprocess,sys,time; "
         f"subprocess.Popen([sys.executable, '-c', {child!r}]); time.sleep(30)"
@@ -380,19 +382,27 @@ def test_real_recovery_execute_terminates_a_live_supervised_tree(tmp_path) -> No
         with launcher._lock:
             states = list(launcher._runs.values())
             active = states[0].record if states else None
-        if active and active.descendant_processes:
+        if (active and ready.exists() and any(
+                item.pid == int(ready.read_text() or "0") for item in active.descendant_processes)):
             break
         time.sleep(0.05)
     assert active is not None and active.descendant_processes
-    descendant_pid = active.descendant_processes[0].pid
+    assert ready.exists()
+    descendant_pid = int(ready.read_text())
+    assert any(item.pid == descendant_pid for item in active.descendant_processes)
+    observed_pids = [item.pid for item in active.descendant_processes]
 
     engine = GitRecoveryEngine(database, process_tree_terminator=launcher.terminate_change)
     result = engine.execute(change, engine.plan(change), "approval-token-123")
     thread.join(10)
 
     assert result.status is RecoveryStatus.RECOVERED
-    assert result.processes_terminated == 2
+    # Windows Python launcher shims can add intermediate members to the Job.
+    assert result.processes_terminated >= 2
     assert not is_process_running(descendant_pid)
+    assert all(not is_process_running(pid) for pid in observed_pids)
+    assert active.top_level_pid and not is_process_running(active.top_level_pid)
+    assert not thread.is_alive()
 
 
 def test_execute_refuses_a_plan_whose_head_has_moved_since_preview(tmp_path) -> None:

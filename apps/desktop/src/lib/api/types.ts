@@ -8,6 +8,7 @@ export type Capability = S["Capability"];
 export type CapabilityState = S["CapabilityState"];
 export type CapabilitiesResponse = S["CapabilitiesResponse"];
 export type ChangeView = S["ChangeView"];
+export type VerificationActionRequest = S["VerificationActionRequest"];
 export type ChangeListResponse = S["ChangeListResponse"];
 export type ChangeContract = S["ChangeContract"];
 export type ChangeCreateRequest = S["ChangeCreateRequest"];

@@ -197,7 +197,7 @@ def test_missing_host_node_is_unavailable(tmp_path) -> None:
     assert error.value.code == "CHECK_RUNTIME_UNAVAILABLE"
 
 
-@pytest.mark.parametrize("name", ["uv", "cargo", "dotnet", "powershell", "make"])
+@pytest.mark.parametrize("name", ["uv", "powershell", "make"])
 def test_unmapped_toolchains_are_refused(tmp_path, name) -> None:
     fake = Builders(tmp_path)
     with pytest.raises(AppError) as error:

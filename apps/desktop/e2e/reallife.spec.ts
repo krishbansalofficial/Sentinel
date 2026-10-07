@@ -33,6 +33,7 @@ test.afterAll(async () => {
 });
 
 test("a cloned GitHub repository can be taken from creation to a verified trace", async ({ page }) => {
+  test.setTimeout(120_000);
   test.skip(!cloned, "could not clone from GitHub (offline?)");
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -43,8 +44,6 @@ test("a cloned GitHub repository can be taken from creation to a verified trace"
   await expect(page.getByText("New to Sentinel?")).toBeVisible();
   await page.getByRole("link", { name: "Take the walkthrough" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Walkthrough" })).toBeVisible();
-  // Earlier specs share this backend and may have registered actors, so don't assert an exact starting count.
-  const before = Number(/(\d) of 8/.exec(await page.getByRole("status").filter({ hasText: "steps detected" }).innerText())![1]);
 
   // Create a Change over the cloned repo.
   await page.goto("/changes?new=1");
@@ -64,10 +63,11 @@ test("a cloned GitHub repository can be taken from creation to a verified trace"
   // Evidence: baseline, edit a real file, current, and the comparison sees the edit.
   await page.getByRole("navigation", { name: "Change sections" }).getByRole("link", { name: "Evidence", exact: true }).click();
   await page.getByRole("button", { name: "Capture baseline" }).click();
-  await expect(page.getByRole("row", { name: /baseline/ })).toBeVisible();
+  // Real environment/tool discovery can exceed the default five-second assertion budget.
+  await expect(page.getByRole("row", { name: /baseline/ })).toBeVisible({ timeout: 60_000 });
   appendFileSync(join(clone, "README.md"), "\nedited during the Sentinel real-life test\n");
   await page.getByRole("button", { name: "Capture current" }).click();
-  await expect(page.getByRole("table", { name: "Git checkpoints" }).getByRole("row")).toHaveCount(3);
+  await expect(page.getByRole("table", { name: "Git checkpoints" }).getByRole("row")).toHaveCount(3, { timeout: 60_000 });
   await expect(page.getByText("README.md").first()).toBeVisible();
 
   // Timeline verifies.
@@ -76,7 +76,9 @@ test("a cloned GitHub repository can be taken from creation to a verified trace"
 
   // The walkthrough now detects the Change.
   await page.goto("/walkthrough");
-  await expect(page.getByRole("status").filter({ hasText: `${before + 1} of 8 steps detected as done` })).toBeVisible();
+  // Actor discovery is asynchronous and earlier specs can register actors. Check this
+  // workflow's completed step rather than racing the aggregate completion count.
+  await expect(page.getByRole("heading", { name: "Create a Change (done)", exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 

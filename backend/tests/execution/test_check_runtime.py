@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import zipfile
 from pathlib import Path
 from uuid import uuid4
 
@@ -363,6 +364,31 @@ def test_python_runtime_snapshots_stdlib_and_deps(fake_python, cache: Path) -> N
         "legacy.egg-link: egg-link to a source tree outside the dependency snapshot",
         "outside.pth: path entry outside the dependency snapshot",
     )
+
+
+def test_embedded_python_snapshot_replaces_backend_and_host_paths(tmp_path, monkeypatch, cache):
+    base = _tree(tmp_path / "embedded", {
+        "python.exe": "exe", "python314._pth": "python314.zip\n..\\src\nC:\\private\nimport site\n",
+        "Lib/site-packages/pytest/__init__.py": "pytest",
+    })
+    with zipfile.ZipFile(base / "python314.zip", "w") as archive:
+        archive.writestr("os.pyc", b"stdlib")
+    facts = json.dumps({"base_prefix": str(base), "prefix": str(base),
+                        "purelib": str(base / "Lib/site-packages")}).encode()
+    monkeypatch.setattr(check_runtime, "capture", lambda *a, **k: CapturedProcess(0, facts, b"", False, False, False, ""))
+    runtime = python_runtime(base / "python.exe", root=cache)
+    assert (runtime.interpreter.path / "python314._pth").read_text() == "python314.zip\n.\nLib\nimport site\n"
+    assert not (runtime.interpreter.path / "Lib/site-packages").exists()
+    assert (runtime.interpreter.path / "Lib/sitecustomize.py").read_bytes() == check_runtime.SITECUSTOMIZE_SOURCE
+    assert (runtime.dependencies.path / "pytest/__init__.py").exists()
+
+
+def test_embedded_layout_requires_regular_stdlib_archive(tmp_path):
+    base = _tree(tmp_path, {"python314._pth": "python314.zip\n", "python314.zip": "invalid"})
+    assert check_runtime._embedded_layout(base) is None
+    with zipfile.ZipFile(base / "python314.zip", "w") as archive:
+        archive.writestr("unrelated.pyc", b"not a stdlib")
+    assert check_runtime._embedded_layout(base) is None
 
 
 def test_an_interpreter_with_its_own_sitecustomize_reports_every_pth(

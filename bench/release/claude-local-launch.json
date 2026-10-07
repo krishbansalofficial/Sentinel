@@ -1,0 +1,13 @@
+{
+  "id": "d5749cd2-9ef9-4a45-94b0-56c92dc3843c",
+  "change_id": "a0c5ed54-f491-48d5-be6b-47e566552ceb",
+  "adapter": "claude",
+  "status": "FAILED",
+  "exit_code": 1,
+  "started_at": "2026-10-07T00:26:08.442790Z",
+  "completed_at": "2026-10-07T00:26:14.551311Z",
+  "authority_reduction": "AppContainer boundary verified before the process resumed: AppContainer token for package SID S-1-15-2-321254719-58136662-1089361823-2393505234-151260907-3444763275-2001637235, Low integrity (0x1000), capabilities [internetClient S-1-15-3-1], member of a Sentinel Job Object. The agent works in a Sentinel-owned workspace clone, not in the selected repository; changes reach the repository only through a previewed, approved fast-forward apply-back.",
+  "schema": "sentinel-local-launch-evidence/1",
+  "provider_error": "Weekly quota exhausted; no model completion or hidden check ran.",
+  "passport_issued": false
+}

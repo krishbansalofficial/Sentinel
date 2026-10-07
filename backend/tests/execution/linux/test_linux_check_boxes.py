@@ -426,17 +426,17 @@ def test_an_unconfined_toolchain_is_refused_without_the_opt_in(
         live_api: LiveApi, tmp_path: Path, monkeypatch) -> None:
     toolchain = tmp_path / "stand-in-toolchain"
     toolchain.mkdir()
-    cargo = toolchain / "cargo"
-    cargo.write_text("#!/bin/sh\necho ran > cargo-ran.txt\n")
-    cargo.chmod(0o755)
+    uv = toolchain / "uv"
+    uv.write_text("#!/bin/sh\necho ran > uv-ran.txt\n")
+    uv.chmod(0o755)
     monkeypatch.setenv("PATH", f"{toolchain}:{os.environ['PATH']}")
     repo = make_repo(tmp_path / "repo", PY_FILES)
     change_id = _create_change(live_api, repo)
     actor = _actor(live_api, change_id, ["change.legacy_verify"])
-    response = _verify(live_api, change_id, actor, "cargo", ["test"])
+    response = _verify(live_api, change_id, actor, "uv", ["run"])
     assert response.status_code == 409, response.text
     assert response.json()["error"]["code"] == "CHECK_TOOLCHAIN_UNCONFINED"
-    assert not (repo / "cargo-ran.txt").exists()
+    assert not (repo / "uv-ran.txt").exists()
     assert _check_runs(live_api, change_id) == []
 
 

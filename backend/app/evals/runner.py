@@ -25,6 +25,7 @@ from __future__ import annotations
 from backend.app.core.telemetry import traced
 
 import hashlib
+import os
 import shutil
 import tempfile
 import time
@@ -76,6 +77,7 @@ class AgentOutcome:
     run_id: str | None = None
     boundary: str | None = None
     detail: str | None = None
+    actor_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,9 +171,14 @@ def hidden_tests_absent(task: EvalTask, tree: Path) -> bool:
 
 def prepare_hidden_tree(task: EvalTask, result: Path, destination: Path) -> Path:
     """A fresh copy of ``result`` (without ``.git``) plus ``hidden_tests/``."""
+    from backend.app.execution.agent_staging import _is_reparse
+    if _is_reparse(result) or os.path.lexists(result / "hidden_tests"):
+        raise RuntimeError("agent result contains a reserved hidden_tests path or linked root")
+    if _is_reparse(task.hidden_tests) or any(_is_reparse(path) for path in task.hidden_tests.rglob("*")):
+        raise RuntimeError("hidden tests contain a link or reparse point")
     shutil.copytree(result, destination, symlinks=True, ignore=shutil.ignore_patterns(".git"))
     shutil.copytree(task.hidden_tests, destination / "hidden_tests", symlinks=False,
-                    dirs_exist_ok=True)
+                    dirs_exist_ok=False)
     return destination
 
 
@@ -231,6 +238,11 @@ class EvalRunner:
                     raise RuntimeError("hidden tests are present in the agent's tree")
                 outcome = self._driver.run(task, repository, run.config.render(task),
                                            attempt=attempt)
+                if outcome.status != "PASSED":
+                    raise RuntimeError(f"agent did not finish successfully ({outcome.status})")
+                if (task.budget_usd is not None and outcome.cost_usd is not None
+                        and outcome.cost_usd > task.budget_usd):
+                    raise RuntimeError("agent exceeded the task cost budget")
                 hidden = self._hidden.run(
                     task, prepare_hidden_tree(task, repository, root / "hidden-run"),
                     outcome=outcome)

@@ -13,7 +13,10 @@ dependencies = [
   "uvicorn[standard]==0.53.0",
   "typer==0.27.2",
   "rich==14.3.4",
-  "cryptography==47.0.0",
+  "cryptography==50.0.2",
+  # Confined Python verification must work in the self-contained desktop bundle.
+  "pytest==9.0.3",
+  "coverage==7.16.2",
   # macOS keeps provider credentials in the Keychain through keyring (the default store there).
   "keyring==25.7.0; sys_platform == 'darwin'",
 ]
@@ -24,7 +27,7 @@ sentinel = "backend.app.cli.main:main"
 [project.optional-dependencies]
 test = [
   "httpx==0.28.1",
-  "pytest==8.4.2",
+  "pytest==9.0.3",
   "pytest-cov==7.1.0",
 ]
 # SDK/exporter are opt-in: export connected runtime traces to an OTLP collector.

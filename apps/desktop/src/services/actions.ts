@@ -37,12 +37,15 @@ import type {
   ToolManifestListResponse,
   ToolTrustDecision,
   ToolTrustScope,
+  VerificationActionRequest,
 } from "@/lib/api/types";
 import { changeKeys } from "./changes";
 
 const base = (id: string) => `/api/v1/changes/${encodeURIComponent(id)}`;
 const seg = encodeURIComponent;
 const idem = (key?: string) => ({ idempotencyKey: key ?? newIdempotencyKey() });
+// Allow runtime preparation as well as the command's own deadline.
+const execution = (key?: string, seconds = 3600) => ({ ...idem(key), timeoutMs: Math.min(4_500_000, seconds * 1000 + 900_000) });
 
 // --- mutations on a Change (each returns the updated ChangeView) -----------------------------------------------------
 export const refreshChange = (id: string) => http.post<ChangeView>(`${base(id)}/refresh`, undefined, idem());
@@ -53,8 +56,8 @@ export const transitionChange = (id: string, body: { expected_revision: number; 
 export const cancelChange = (id: string, body: { expected_revision: number; reason: string | null }) =>
   http.post<ChangeView>(`${base(id)}/cancel`, body, idem());
 
-export const verifyChange = (id: string, body: { executable: string; args: string[]; timeout_seconds?: number }) =>
-  http.post<ChangeView>(`${base(id)}/verify`, body, idem());
+export const verifyChange = (id: string, body: VerificationActionRequest) =>
+  http.post<ChangeView>(`${base(id)}/verify`, body, execution(undefined, body.verification.timeout_seconds ?? 300));
 
 export const updateContract = (id: string, body: { contract: ChangeContract; expected_revision: number }) =>
   http.put<ChangeView>(`${base(id)}/contract`, body);
@@ -88,7 +91,7 @@ export const revokeDelegation = (id: string) => http.post<Delegation>(`/api/v1/d
 
 // --- agents -----------------------------------------------------------------------------------------------------------
 export interface LaunchBody { actor_id: string; launch: { adapter: string; executable: string; args: string[]; timeout_seconds?: number }; output_limit_bytes?: number }
-export const launchAgent = (id: string, body: LaunchBody, key?: string) => http.post<AgentRun>(`${base(id)}/agents/launch`, body, idem(key));
+export const launchAgent = (id: string, body: LaunchBody, key?: string) => http.post<AgentRun>(`${base(id)}/agents/launch`, body, execution(key, body.launch.timeout_seconds ?? 900));
 export interface AttachBody { actor_id: string; attach: { adapter: string; external_run_id: string; declared_started_at?: string | null } }
 export const attachAgent = (id: string, body: AttachBody, key?: string) => http.post<AgentRun>(`${base(id)}/agents/attach`, body, idem(key));
 export const pauseAgent = (id: string, runId: string, actorId: string) => http.post<AgentRun>(`${base(id)}/agents/${seg(runId)}/pause`, { actor_id: actorId }, idem());
@@ -98,7 +101,7 @@ export const stopAgent = (id: string, runId: string, actorId: string) => http.po
 // --- assurance --------------------------------------------------------------------------------------------------------
 export const createAssurancePlan = (id: string) => http.post<AssurancePlan>(`${base(id)}/assurance/plan`, undefined, idem());
 export const runAssurancePlan = (id: string, planId: string, body: { actor_id: string; output_limit_bytes?: number }, key?: string) =>
-  http.post<AssuranceRunListResponse>(`${base(id)}/assurance/${seg(planId)}/run`, body, idem(key));
+  http.post<AssuranceRunListResponse>(`${base(id)}/assurance/${seg(planId)}/run`, body, execution(key));
 
 // --- delivery ---------------------------------------------------------------------------------------------------------
 export const connectGithub = (token: string) => http.post<ProviderConnectionStatus>("/api/v1/providers/github/connect", { token }, idem());

@@ -13,6 +13,9 @@ import { lifecycleInfo } from "@/lib/status";
 import { GUARDS, allowedTargets, guardText } from "@/lib/lifecycle";
 import { cancelChange, captureEvidence, refreshChange, transitionChange, updateContract, verifyChange } from "@/services/actions";
 import { changeKeys } from "@/services/changes";
+import { ActorPicker } from "@/components/pickers";
+import { useActors } from "@/features/authority/useActors";
+import { splitArgs } from "@/lib/arguments";
 
 const errMessage = (e: unknown) => (e instanceof ApiError ? e.message : "The request failed.");
 const TERMINAL = new Set(["CANCELLED", "STABLE", "FAILED"]);
@@ -59,6 +62,9 @@ export function ChangeActions({ change }: { change: ChangeView }) {
   const [reason, setReason] = useState("");
   const [exe, setExe] = useState("");
   const [args, setArgs] = useState("");
+  const [actor, setActor] = useState("");
+  const { actors } = useActors(change.id);
+  const actorValid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(actor.trim());
   const close = () => { setDialog(null); setReason(""); setTarget(""); };
   // Cancelling has its own action with its own confirmation, so it is not offered as a plain state move.
   const moves = (change.allowed_next_states ?? allowedTargets(change.lifecycle_state)).filter((s) => s !== "CANCELLED");
@@ -68,7 +74,7 @@ export function ChangeActions({ change }: { change: ChangeView }) {
   const refresh = useAction(() => refreshChange(change.id));
   const transition = useAction(() => transitionChange(change.id, { expected_revision: revision, target_state: target as ChangeLifecycleState, reason: reason.trim() || null }), close);
   const cancel = useAction(() => cancelChange(change.id, { expected_revision: revision, reason: reason.trim() || null }), close);
-  const verify = useAction(() => verifyChange(change.id, { executable: exe.trim(), args: args.trim() ? args.trim().split(/\s+/) : [] }), () => { setDialog(null); });
+  const verify = useAction(() => verifyChange(change.id, { actor_id: actor.trim(), verification: { executable: exe.trim(), args: splitArgs(args), timeout_seconds: 300 } }), () => { setDialog(null); });
 
   return (
     <div className="space-y-3">
@@ -105,8 +111,9 @@ export function ChangeActions({ change }: { change: ChangeView }) {
         <div className="grid gap-1.5"><Label htmlFor="cr">Reason (optional)</Label><Input id="cr" value={reason} onChange={(e) => setReason(e.target.value)} /></div>
       </FormDialog>
 
-      <FormDialog open={dialog === "verify"} onOpenChange={(o) => !o && setDialog(null)} title="Run verification" description="Runs one command in the repository and records the result. It can modify the repository, depending on the command."
-        submit={() => verify.mutate(undefined)} pending={verify.isPending} error={verify.error} submitLabel="Run" disabled={!exe.trim()}>
+      <FormDialog open={dialog === "verify"} onOpenChange={(o) => !o && setDialog(null)} title="Run verification" description="Runs a check using the selected actor's delegation. Confined toolchains use a repository copy; explicitly authorized unconfined checks can modify the repository."
+        submit={() => verify.mutate(undefined)} pending={verify.isPending} error={verify.error} submitLabel="Run" disabled={!exe.trim() || !actorValid}>
+        <ActorPicker id="verify-actor" label="Run as" actors={actors} value={actor} onChange={setActor} hint="Requires a change.legacy_verify delegation for this Change." error={actor && !actorValid ? "Enter a valid actor id." : undefined} />
         <div className="grid gap-1.5"><Label htmlFor="ve">Command</Label><Input id="ve" value={exe} onChange={(e) => setExe(e.target.value)} placeholder="pytest" className="font-mono text-[13px]" /></div>
         <div className="grid gap-1.5"><Label htmlFor="va">Arguments</Label><Input id="va" value={args} onChange={(e) => setArgs(e.target.value)} placeholder="-q tests/" className="font-mono text-[13px]" /></div>
       </FormDialog>

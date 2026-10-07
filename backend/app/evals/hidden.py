@@ -71,7 +71,9 @@ class SandboxHiddenTestRunner:
     @traced("eval.hidden_check")
     def run(self, task: EvalTask, tree: Path, *, outcome: AgentOutcome) -> HiddenTestResult:
         from backend.app.execution.cgroups import RunLimits
-        from backend.app.execution.linux_sandbox import SandboxSpec, spawn_linux_sandbox
+        from backend.app.execution.linux_sandbox import (
+            SandboxSpec, capture_linux_sandbox, spawn_linux_sandbox,
+        )
 
         argv = resolve_hidden_command(task.hidden_test_command)
         prefixes = sorted({Path(sys.prefix).resolve(), Path(sys.base_prefix).resolve()})
@@ -82,24 +84,31 @@ class SandboxHiddenTestRunner:
                  "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"})
         started = time.monotonic()
         cgroup = self._hierarchy().create_run(uuid4(), self._limits or RunLimits())
-        process = spawn_linux_sandbox(spec, cgroup, redact=lambda text: text)
-        timed_out = False
         try:
-            stdout, stderr = process._popen.communicate(timeout=min(self._timeout,
-                                                                    task.timeout_seconds))
-        except Exception:
-            timed_out = True
-            process.kill()
-            stdout, stderr = process._popen.communicate(timeout=10)
+            process = spawn_linux_sandbox(spec, cgroup, redact=lambda text: text)
+        except BaseException:
+            cgroup.remove()
+            raise
+        try:
+            tail = bytearray()
+            def remember(stdout: bytes, stderr: bytes) -> None:
+                tail.extend(stdout)
+                tail.extend(stderr)
+                del tail[:-OUTPUT_TAIL_BYTES]
+            result = capture_linux_sandbox(
+                process, spec, timeout=min(self._timeout, task.timeout_seconds),
+                limit=OUTPUT_TAIL_BYTES, on_chunk=remember,
+            )
         finally:
             facts = process.linux_sandbox
             process.close()
-        code = None if timed_out else process.returncode
+        code = None if result.timed_out else result.returncode
         return HiddenTestResult(
-            passed=(code == 0), exit_code=code, timed_out=timed_out,
+            passed=(code == 0 and not result.incomplete and facts.verified),
+            exit_code=code, timed_out=result.timed_out,
             duration_seconds=time.monotonic() - started,
             boundary="LINUX_SANDBOX" if facts.verified else "UNKNOWN",
-            output_tail=_tail((stdout or b"") + (stderr or b"")))
+            output_tail=_tail(bytes(tail) if tail else result.stdout + result.stderr))
 
 
 class VerificationHiddenTestRunner:
@@ -112,22 +121,32 @@ class VerificationHiddenTestRunner:
     def run(self, task: EvalTask, tree: Path, *, outcome: AgentOutcome) -> HiddenTestResult:
         if outcome.change_id is None:
             raise RuntimeError("confined verification needs the attempt's Change")
+        actor_id = getattr(outcome, "actor_id", None)
+        if actor_id is None:
+            raise RuntimeError("confined verification needs the attempt's delegated actor")
         change_id = UUID(outcome.change_id)
         repository = Path(self._client.get_change(change_id)["repository_path"])
         # The fixture repository holds the applied result; the hidden tests join it
         # only now, after the agent exited and its workspace was applied.
-        shutil.copytree(tree / "hidden_tests", repository / "hidden_tests", dirs_exist_ok=True)
+        from backend.app.execution.agent_staging import _is_reparse
+        hidden = tree / "hidden_tests"
+        if os.path.lexists(repository / "hidden_tests"):
+            raise RuntimeError("agent repository contains the reserved hidden_tests path")
+        if _is_reparse(hidden) or any(_is_reparse(path) for path in hidden.rglob("*")):
+            raise RuntimeError("hidden tests contain a link or reparse point")
+        shutil.copytree(hidden, repository / "hidden_tests", dirs_exist_ok=False)
         first, *rest = task.hidden_test_command
         started = time.monotonic()
         result = self._client._request(
             "POST", f"/api/v1/changes/{change_id}/verify",
-            json_body={"executable": first, "args": rest,
-                       "timeout_seconds": task.timeout_seconds})
+            json_body={"actor_id": actor_id, "verification": {
+                "executable": first, "args": rest, "timeout_seconds": task.timeout_seconds}})
         verification = result.get("verification") or result
         status = verification.get("status")
         output = (verification.get("stdout") or "") + (verification.get("stderr") or "")
         return HiddenTestResult(
-            passed=status == "PASSED", exit_code=verification.get("exit_code"),
+            passed=status == "PASSED" and verification.get("boundary") == "APPCONTAINER",
+            exit_code=verification.get("exit_code"),
             timed_out=status == "TIMED_OUT", duration_seconds=time.monotonic() - started,
             boundary=verification.get("boundary") or "UNKNOWN",
             output_tail=output[-OUTPUT_TAIL_BYTES:])

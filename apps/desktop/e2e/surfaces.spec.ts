@@ -49,16 +49,19 @@ test("cancelling a Change disables further actions", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Run verification" })).toBeDisabled();
 });
 
-test("verification needs a command, splits arguments, and sends them", async ({ page }) => {
+test("verification needs a delegated actor and preserves quoted arguments", async ({ page }) => {
   const c = change();
-  const { api } = await open(page, `/changes/${c.id}`, { changes: [c] });
+  const actor = "11111111-1111-4111-8111-111111111111";
+  const { api } = await open(page, `/changes/${c.id}`, { changes: [c], actors: [{ id: actor, display_name: "Verifier", kind: "HUMAN" }] });
   await page.getByRole("button", { name: "Run verification" }).click();
   await expect(page.getByRole("dialog").getByRole("button", { name: "Run", exact: true })).toBeDisabled();
   await page.getByLabel("Command").fill("pytest");
-  await page.getByLabel("Arguments").fill("-q   tests/unit");
+  await page.getByLabel("Arguments").fill('-q "tests/unit with spaces"');
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Run", exact: true })).toBeDisabled();
+  await page.getByLabel("Run as").selectOption(actor);
   await page.getByRole("dialog").getByRole("button", { name: "Run", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  expect(api.calls.at(-1)).toMatchObject({ path: "verify", body: { executable: "pytest", args: ["-q", "tests/unit"] } });
+  expect(api.calls.at(-1)).toMatchObject({ path: "verify", body: { actor_id: actor, verification: { executable: "pytest", args: ["-q", "tests/unit with spaces"] } } });
 });
 
 test("refresh cannot be double-fired while it is running", async ({ page }) => {

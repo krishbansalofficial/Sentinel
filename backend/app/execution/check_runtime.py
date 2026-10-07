@@ -28,6 +28,7 @@ import re
 import stat
 import tempfile
 import time
+import zipfile
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -78,6 +79,10 @@ SITECUSTOMIZE_SOURCE = (
     f"_deps = _os.environ.get({SITE_PACKAGES_ENV!r})\n"
     "if _deps:\n"
     "    _site.addsitedir(_deps)\n"
+    "    import sys as _sys\n"
+    "    if _sys.flags.isolated:\n"
+    "        _sys.path.insert(0, _os.getcwd())\n"
+    "    del _sys\n"
     "del _os, _site, _deps\n"
 ).encode("utf-8")
 
@@ -249,7 +254,8 @@ def _walk(
                     continue
                 stack.append((path, name))
             elif stat.S_ISREG(mode):
-                yield name, path
+                if entry.name.casefold() not in ignore:
+                    yield name, path
             else:
                 raise check_runtime_unsafe_source(kind, f"{name} is not a regular file")
 
@@ -555,7 +561,8 @@ def _validate_interpreter_facts(
     """
 
     if not (_regular_file(base_prefix / "python.exe")
-            and _regular_file(base_prefix / "Lib" / "os.py")):
+            and (_regular_file(base_prefix / "Lib" / "os.py")
+                 or _embedded_layout(base_prefix) is not None)):
         raise check_runtime_failed("python", "the reported base prefix is not a Python install")
     if purelib.name.casefold() != "site-packages" or not (
             _inside(purelib, prefix) or _inside(purelib, base_prefix)):
@@ -563,6 +570,24 @@ def _validate_interpreter_facts(
             "python", "the reported site-packages is not under the interpreter's prefix")
     if not _inside(interpreter, prefix):
         raise check_runtime_failed("python", "the interpreter is not inside its reported prefix")
+
+
+def _embedded_layout(prefix: Path) -> tuple[Path, Path] | None:
+    """Accept the official embeddable layout without trusting arbitrary path entries."""
+    candidates = list(prefix.glob("python[0-9]*._pth"))
+    if len(candidates) != 1 or not _regular_file(candidates[0]):
+        return None
+    configuration = candidates[0]
+    archive = configuration.with_suffix(".zip")
+    if not _regular_file(archive):
+        return None
+    try:
+        with zipfile.ZipFile(archive) as stdlib:
+            if "os.pyc" not in stdlib.namelist():
+                return None
+    except (OSError, zipfile.BadZipFile):
+        return None
+    return configuration, archive
 
 
 def _refused_interpreter_location(interpreter: Path) -> str | None:
@@ -658,12 +683,25 @@ def python_runtime(
     hook_directory = Path(tempfile.mkdtemp(prefix="sentinel-sitehook-"))
     try:
         sources: list[tuple[str, Path]] = [("", base_prefix)]
+        ignored = PYTHON_BASE_IGNORE
+        embedded = _embedded_layout(base_prefix)
+        if embedded is not None:
+            configuration, archive = embedded
+            # Backend-relative paths and host dependency paths never enter a check.
+            # The generated site hook supplies only the confined dependency snapshot.
+            if not site_hook:
+                raise check_runtime_failed("python", "an embedded interpreter has a custom site hook")
+            private_configuration = hook_directory / configuration.name
+            private_configuration.write_text(
+                f"{archive.name}\n.\nLib\nimport site\n", encoding="utf-8")
+            ignored = ignored | {configuration.name.casefold()}
+            sources.append((configuration.name, private_configuration))
         if site_hook:
             hook = hook_directory / "sitecustomize.py"
             hook.write_bytes(SITECUSTOMIZE_SOURCE)
             sources.append((SITECUSTOMIZE_RELPATH, hook))
         base = _snapshot(sources, kind="python", root=cache,
-                         ignore=PYTHON_BASE_IGNORE, size_limit=size_limit)
+                         ignore=ignored, size_limit=size_limit)
     finally:
         remove_tree_no_follow(hook_directory)
     deps = _snapshot([("", purelib)], kind="python-deps", root=cache,
@@ -708,6 +746,64 @@ def go_runtime(
     if go.parent.name.lower() != "bin" or not (goroot / "src").is_dir() or not (goroot / "pkg" / "tool").is_dir():
         raise check_runtime_failed("go", "go.exe is not inside a GOROOT with src and pkg/tool")
     return _snapshot([("", goroot)], kind="go", root=None if root is None else Path(root),
+                     ignore=frozenset(), size_limit=size_limit)
+
+
+def cargo_runtime(
+    cargo_exe: str | Path, *, root: str | Path | None = None,
+    size_limit: int = DEFAULT_SIZE_LIMIT_BYTES,
+) -> RuntimeSnapshot:
+    """Snapshot a real Rust toolchain, never a rustup proxy or user Cargo home."""
+    cargo = Path(cargo_exe)
+    toolchain = cargo.parent.parent
+    suffix = ".exe" if os.name == "nt" else ""
+    if (not cargo.is_absolute() or not cargo.is_file()
+            or cargo.parent.name != "bin"
+            or not (toolchain / "bin" / f"rustc{suffix}").is_file()
+            or not (toolchain / "lib" / "rustlib").is_dir()):
+        raise check_runtime_failed("cargo", "cargo must belong to a real Rust toolchain")
+    return _snapshot([("bin", toolchain / "bin"), ("lib", toolchain / "lib")],
+                     kind="cargo", root=None if root is None else Path(root),
+                     ignore=frozenset(), size_limit=size_limit)
+
+
+def dotnet_runtime(
+    dotnet_exe: str | Path, *, root: str | Path | None = None,
+    size_limit: int = DEFAULT_SIZE_LIMIT_BYTES,
+) -> RuntimeSnapshot:
+    """Snapshot the SDK, hosts, runtimes and targeting packs of a trusted .NET install."""
+    dotnet = Path(dotnet_exe)
+    install = dotnet.parent
+    required = ("host", "sdk", "shared", "packs")
+    if (not dotnet.is_absolute() or not dotnet.is_file()
+            or not all((install / name).is_dir() for name in required)):
+        raise check_runtime_failed("dotnet", "dotnet must belong to an SDK installation")
+    sources = [(dotnet.name, dotnet), *((name, install / name) for name in required)]
+    return _snapshot(sources, kind="dotnet", root=None if root is None else Path(root),
+                     ignore=frozenset(), size_limit=size_limit)
+
+
+def windows_rust_libraries(
+    cargo_exe: Path, *, root: str | Path | None = None,
+    size_limit: int = DEFAULT_SIZE_LIMIT_BYTES,
+) -> RuntimeSnapshot | None:
+    """Snapshot the x64 MSVC linker and its MSVC/Windows SDK libraries."""
+    if os.name != "nt":
+        return None
+    if not (cargo_exe.parent.parent / "lib/rustlib/x86_64-pc-windows-msvc").is_dir():
+        raise check_runtime_failed("cargo", "only the x64 MSVC Windows toolchain is supported")
+    program_files = Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"))
+    vc_roots = sorted((program_files / "Microsoft Visual Studio").glob("*/*/VC/Tools/MSVC/*/lib/x64"))
+    sdk_roots = sorted((program_files / "Windows Kits/10/Lib").glob("*"))
+    sdk_roots = [path for path in sdk_roots if (path / "um/x64").is_dir() and (path / "ucrt/x64").is_dir()]
+    if not vc_roots or not sdk_roots:
+        raise check_runtime_failed("cargo", "MSVC and Windows SDK x64 libraries are required")
+    sdk = sdk_roots[-1]
+    linker_bin = vc_roots[-1].parent.parent / "bin/Hostx64/x64"
+    if not (linker_bin / "link.exe").is_file():
+        raise check_runtime_failed("cargo", "the x64 MSVC linker is required")
+    return _snapshot([("vc", vc_roots[-1]), ("bin", linker_bin), ("um", sdk / "um/x64"), ("ucrt", sdk / "ucrt/x64")],
+                     kind="rust-libraries", root=None if root is None else Path(root),
                      ignore=frozenset(), size_limit=size_limit)
 
 

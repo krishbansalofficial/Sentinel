@@ -1,6 +1,6 @@
 // Stages a self-contained Python runtime + the backend source for packaging (Windows x64).
 //
-//   build/backend-stage/python/   embeddable CPython 3.12 with the runtime dependencies in Lib/site-packages
+//   build/backend-stage/python/   embeddable CPython with the runtime dependencies in Lib/site-packages
 //   build/backend-stage/src/      the `backend` package (no tests)
 //
 // electron-builder copies both into resources/backend/. Nothing is installed on the machine: wheels are
@@ -11,16 +11,16 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { backendSourceAllowed, powershellLiteral, readRuntimeRequirements } from "./stage-policy.mjs";
 
-const PYTHON_VERSION = "3.12.10";
-// Pinned from the first verified download of this exact file. The authoritative check is the Authenticode
-// signature on python.exe below; this hash additionally detects a changed or corrupted download.
-const EMBED_SHA256 = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3";
+const PYTHON_VERSION = "3.14.8";
+// Published SHA-256: https://www.python.org/downloads/release/python-3148/
+// The Authenticode signature on python.exe is checked independently below.
+const EMBED_SHA256 = "a93abe456ab01bd96d7a085b3cdb6566b3063f4241360d114142fbdb07f0a310";
 const EMBED_URL = `https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-embed-amd64.zip`;
 
-// Runtime only: the desktop app never runs the CLI (typer/rich) or the terminal UI (textual).
-const RUNTIME_REQUIREMENTS = ["fastapi>=0.115,<1", "pydantic>=2.10,<3", "uvicorn[standard]>=0.34,<1"];
-
+// Include every required backend dependency, including Passport signing.
+// Read the application metadata instead of maintaining a second dependency list.
 const here = dirname(fileURLToPath(import.meta.url));
 const desktop = resolve(here, "..", "..");
 const repoRoot = resolve(desktop, "..", "..");
@@ -29,6 +29,7 @@ const stage = join(desktop, "build", "backend-stage");
 const pythonDir = join(stage, "python");
 const srcDir = join(stage, "src");
 const hostPython = process.env.CHANGE_ASSURANCE_PYTHON || "python";
+const RUNTIME_REQUIREMENTS = readRuntimeRequirements(join(repoRoot, "pyproject.toml"), hostPython);
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { stdio: "inherit", shell: false, ...options });
@@ -63,7 +64,7 @@ async function downloadEmbeddable() {
 
 /** python.exe must be signed by the Python Software Foundation; a tampered download fails here. */
 function verifyPythonSignature(exe) {
-  const script = `$s = Get-AuthenticodeSignature -LiteralPath '${exe}'; "$($s.Status)|$($s.SignerCertificate.Subject)"`;
+  const script = `$s = Get-AuthenticodeSignature -LiteralPath ${powershellLiteral(exe)}; "$($s.Status)|$($s.SignerCertificate.Subject)"`;
   const result = spawnSync("powershell", ["-NoProfile", "-Command", script], { encoding: "utf8" });
   const [status, subject = ""] = (result.stdout ?? "").trim().split("|");
   if (status !== "Valid" || !/Python Software Foundation/i.test(subject)) {
@@ -88,7 +89,7 @@ function installDependencies() {
     "--target", target,
     "--only-binary=:all:",
     "--platform", "win_amd64",
-    "--python-version", "3.12",
+    "--python-version", PYTHON_VERSION.split(".").slice(0, 2).join("."),
     "--implementation", "cp",
     "--no-compile",
     "--disable-pip-version-check",
@@ -98,21 +99,29 @@ function installDependencies() {
   for (const name of readdirSync(target)) {
     if (name === "bin" || name === "__pycache__") rmSync(join(target, name), { recursive: true, force: true });
   }
+  stripDependencyTests(target);
+}
+
+function stripDependencyTests(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const child = resolve(dir, entry.name);
+    if (!child.startsWith(resolve(pythonDir) + "\\")) throw new Error("Dependency cleanup escaped the stage.");
+    if (["tests", "__pycache__"].includes(entry.name)) rmSync(child, { recursive: true, force: true });
+    else stripDependencyTests(child);
+  }
 }
 
 function copyBackend() {
   cpSync(join(repoRoot, "backend"), join(srcDir, "backend"), {
     recursive: true,
-    filter: (source) => {
-      const name = source.replace(/\\/g, "/");
-      return !/\/tests(\/|$)|__pycache__|\.pyc$|\.md$/.test(name);
-    },
+    filter: backendSourceAllowed,
   });
 }
 
 function smokeTest() {
   const exe = join(pythonDir, "python.exe");
-  const code = "import backend.app.main, fastapi, pydantic, uvicorn, sqlite3; print('ok')";
+  const code = "import backend.app.main, fastapi, pydantic, uvicorn, sqlite3, cryptography; print('ok')";
   // Importing the backend creates its database and API token under CHANGE_ASSURANCE_DB_PATH (default: the working
   // directory). Point it at a throwaway directory outside the stage so nothing runtime-generated is ever packaged.
   const scratch = mkdtempSync(join(tmpdir(), "ca-stage-smoke-"));
@@ -155,7 +164,7 @@ async function main() {
   run("powershell", [
     "-NoProfile",
     "-Command",
-    `Expand-Archive -LiteralPath '${zip}' -DestinationPath '${pythonDir}' -Force`,
+    `Expand-Archive -LiteralPath ${powershellLiteral(zip)} -DestinationPath ${powershellLiteral(pythonDir)} -Force`,
   ]);
   verifyPythonSignature(join(pythonDir, "python.exe"));
   configureEmbeddable();

@@ -1,0 +1,98 @@
+# Independent fork session handoff
+
+Updated: 2026-10-06 EDT / 2026-10-07 UTC. Workspace: `C:\Users\krish\Sentinel-fork`.
+
+Krish owns this continuation and authorized implementation, security fixes,
+testing, packaging and launching Electron. The former hackathon/team approval
+requirements are historical and superseded. Preserve upstream attribution and
+license obligations. No commits, pushes, publication or external messages were
+made in this session.
+
+## Changes and reasons
+
+| Area | Fix and evidence |
+| --- | --- |
+| Cargo/.NET checks | Implemented confined SDK snapshots on Windows and read-only SDK binds on Linux. Cargo uses private offline caches, explicit rustc/rustdoc and native MSVC/Windows SDK linker inputs; .NET uses private CLI/NuGet caches, offline restore and disabled telemetry, diagnostics and workload resolution. Real Windows Go, Rust and SDK-only .NET probes passed. |
+| SDK discovery | Resolve Rustup proxies in a fresh directory with a minimal environment, ignoring repository toolchain selection. Validate complete installations and refuse links/unsafe runtime roots. Architecture tests explicitly pin this reviewed process probe. |
+| Evaluation authority | Send a delegated actor and wrapped verification body; bind task contracts, Claude budget flags and relevant scopes. Failed agents, stopped workflows, known budget overruns and unverified checks cannot become successful hidden-test results. |
+| Hidden-test isolation | Refuse reserved hidden-test paths and links/reparse points before staging fresh trees. Bound Linux output capture and tails, clean failed-launch cgroups and require verified confinement. Output capture stays inside the execution module. |
+| Desktop verification | Repair the obsolete request contract; add actor selection/UUID validation and preserve quoted command arguments using a shared parser. A real browser dialog produced PASSED/APPCONTAINER and stdout `5`. |
+| Execution deadlines | Allow bounded runtime preparation plus command deadlines for known execution POST routes only. Ordinary read deadlines stay short; invalid deadlines fall back safely. Unit tests cover route and bound behavior. |
+| Packaging privacy | Exclude stores, tokens, databases, local credentials, tests and caches. Derive exact runtime dependencies from pyproject, validate staged metadata and safely quote PowerShell paths. New packaging-policy tests passed. |
+| Embedded Python | Update CPython to 3.14.8, verify the published hash and Python Software Foundation signature. Validate embedded stdlib archives, replace unsafe path configuration and load confined dependencies/project imports in snapshots. |
+| Bundled assurance | Include pytest 9.0.3 and coverage 7.16.2. Packaged pytest denied host reads/writes and backend-loopback access; real diff coverage measured 100% of the changed executable line in AppContainer. |
+| Dependencies | Replace cryptography 47.0.0 with 50.0.2, synchronize the portable Passport action pin and repair vulnerable npm build chains. Saved npm and OSV audits report zero known advisories; Python audit covers 33 packaged libraries. |
+| Electron smoke | Remove inherited ELECTRON_RUN_AS_NODE, bound fetch/CDP requests, fail on early exit, clear pending requests on socket closure and clean owned child trees. Optional real checks use a safe temporary Git repository. All 14 checks passed on the final rebuild. |
+| Frontend loading | Move walkthrough metadata and command parsing into shared small modules, avoiding eager imports of lazy pages. Build, API consistency and TypeScript checks passed. |
+| Browser stress | Trace showed 80 animated dismissals exceeded the default 30-second test deadline while continuing to progress. Set a 60-second stress-test deadline; rerun passed with no DOM leak/focus failure. |
+| Recovery regression | Wait for the actual spawned child PID rather than a Python launcher shim; verify the top-level process and every observed descendant terminate. Accept intermediate launcher members in the reported termination count. All 19 recovery tests passed. |
+| Linux test harness | Recognize Ubuntu's `/usr/share/nodejs/npm/bin/npm-cli.js` in the host-only logic harness, matching the existing production Linux resolver. This adds no production host fallback. Final Linux affected-module rerun passed. |
+| CI/docs | Add Windows desktop verification/build/package/smoke CI, remove obsolete implementation approval requirements, document honest confinement and provider limits, capture actual Electron screenshots and GIF. Remote CI has not been run by this session. |
+
+## Validation
+
+Renderer unit tests: **69 passed**. Electron unit tests: **108 passed**.
+Browser suite: **112 passed** in the full run plus **1 passed** on the corrected
+dialog stress-test rerun, covering all 113 collected cases. Real verification
+was enabled with `SENTINEL_E2E_REAL_CHECKS=1`.
+
+Windows backend full run: **2,351 passed, 88 skipped, five failures** out of 2,444.
+All five failures were corrected; the final affected-module rerun returned
+**153 passed**. Combined unique passing cases: **2,356**, with no unresolved
+Windows failure. Do not describe the original full run as wholly green.
+
+Linux kernel acceptance: **143 passed, 5 skipped**, including real Python/Node
+checks, hostile cases, attribution, freeze and cleanup. WSL has hybrid cgroups;
+the test harness privately binds its existing v2 mount and disables unavailable
+resource controllers. Two skips concern memory/process limits, two native
+architecture and one root permissions. Production still requires controllers
+and fails closed. A suitable host or dedicated CI must validate resource limits.
+
+Full Linux: **2,111 passed, 328 skipped, five failures**; final affected rerun:
+**157 passed, one Windows-only skip**. Combined unique passing cases: **2,116**.
+The final kernel acceptance rerun also passed **143 tests with five skips**.
+No exercised failure remains unresolved.
+Machine-readable session results are in `bench/release/verification.json`. Local test XML/logs live in ignored `.tmp/`; saved public-safe dependency
+and provider reports plus genuine screenshots/GIF live in `bench/release/`.
+
+## Running and reproducing
+
+Use Node 24+ and Python 3.12+. The final test environment is
+`.tmp/security-suite-env/Scripts/python.exe` (Python 3.14.3). Packaged Python is
+3.14.8. Install development dependencies with `pip install -e '.[test,tui,keyring,telemetry]'`.
+In `apps/desktop`, run `npm ci`, `npm test`, `npm run build`, `npm run test:e2e`,
+`npm run package:dir`, and `npm run test:electron:smoke`. Set
+`SENTINEL_SMOKE_REAL_CHECKS=1` for bundled pytest/diff-coverage checks on a usable
+Windows AppContainer host. Before direct Electron launch remove the inherited
+`ELECTRON_RUN_AS_NODE` variable. Executable:
+`apps/desktop/release/win-unpacked/Sentinel.exe`.
+
+The final desktop is left open using isolated profile
+`%LOCALAPPDATA%/SentinelFork-verified`; backend health returns 200. `.tmp/desktop-launch.json`
+records its PID/profile. Preserve existing user data and unrelated processes.
+
+Backend full command: `python -m pytest -o addopts= -v -rs`.
+Affected rerun includes `backend/tests/core/test_subprocess_boundary.py`,
+`backend/tests/execution/test_runner.py`, `backend/tests/passport/test_portable_verify.py`,
+`backend/tests/recovery/test_git_recovery.py`, `backend/tests/evals/test_hidden.py`,
+and, on Linux, `backend/tests/kb_flow/test_kb_end_to_end.py`.
+
+## Remaining external limits and next-session cautions
+
+The authenticated Claude CLI launched with reduced authority in AppContainer,
+but weekly quota exhaustion prevented a successful task. Saved result is ERROR
+with no hidden check or Passport; no model-accuracy claim is supported. See
+`bench/release/claude-local*`. Do not retry against an exhausted provider quota.
+
+Package registry publication, Pages hosting, release posts and remote CI are
+external release actions still outstanding. .NET was tested with an SDK-only
+console harness, not NuGet's external testhost. Linked pnpm/yarn installations,
+Windows Server, generic agents, same-user threats and host/key compromise retain
+the limits in SECURITY.md/SECURITY_REVIEW.md. Zero observed escapes is no proof
+against all escapes. Windows hostile descendant spawn attempts were refused;
+do not claim successful adversarial descendant containment from them.
+
+Original user edits were already present in `e2e/reallife.spec.ts`,
+`src/features/checks/CheckRunsSection.tsx` and untracked `e2e/checks.spec.ts`.
+Preserve them. The repo remains dirty with this session's work; review the diff
+before making any commit. No subagents were used.

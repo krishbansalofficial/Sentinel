@@ -10,7 +10,7 @@ import { checkBoundaryInfo, linuxFactsLines, networkText } from "./checks";
 export function CheckRunsSection({ changeId }: { changeId: string }) {
   const runs = useQuery(checkRunsQuery(changeId));
   if (runs.isPending) return <Section title="Check runs" flush><Skeleton lines={2} label="Loading check runs" /></Section>;
-  if (runs.isError) return <ErrorState error={runs.error} onRetry={() => runs.refetch()} />;
+  if (runs.isError) return <Section title="Check runs"><ErrorState error={runs.error} onRetry={() => runs.refetch()} /></Section>;
   const items = runs.data.items ?? [];
   return (
     <Section

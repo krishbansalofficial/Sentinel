@@ -63,7 +63,7 @@ def test_a_run_without_a_change_or_boxes_is_refused(tmp_path):
 def test_unconfined_toolchain_is_refused_without_the_opt_in(tmp_path):
     make_repo(tmp_path, {"README.md": "hello\n"})
     with pytest.raises(AppError) as error:
-        _runner(tmp_path).run(str(tmp_path), VerificationRequest(executable="cargo"), 100,
+        _runner(tmp_path).run(str(tmp_path), VerificationRequest(executable="uv"), 100,
                               change_id=uuid4())
     assert error.value.code == "CHECK_TOOLCHAIN_UNCONFINED"
 

@@ -1,7 +1,53 @@
 # Sentinel: Handoff for the Next Build Phase
 
 Owner: Krish Bansal (kb). Fork: `krishbansalofficial/Sentinel` (upstream `csshlok/Sentinel`).
-Written: 2026-10-03. Status updated 2026-10-09. Read this whole file before touching code.
+Written: 2026-10-03. Historical status updated 2026-10-09 (the prior handoff date is retained as recorded). Read this whole file before touching code.
+
+## Fork maintenance authority (2026-10-06)
+
+Krish Bansal maintains this fork independently after the original hackathon.
+Implementation, fixes, tests and local builds are authorized by the fork owner;
+no approval from csshlok or the former team is required. Earlier team approval
+requirements below are historical and superseded. Existing upstream authorship
+and third-party license obligations still apply; this statement does not assign
+copyright or relicense upstream code.
+
+## Current fork continuation (2026-10-06)
+
+Read [HANDOFF_FORK.md](HANDOFF_FORK.md) for this session's fix log, reproducible
+commands, evidence and next-agent cautions.
+
+The table and dated test counts below describe the inherited hackathon work.
+This continuation implemented the cargo/.NET confinement handoff, repaired
+hidden-test verification and isolation, updated vulnerable dependencies, and
+hardened the Windows package staging. The frontend, backend, real browser flows
+and self-contained Electron application are implemented and exercised locally.
+See [SECURITY_REVIEW.md](SECURITY_REVIEW.md) for the security findings and limits.
+
+Current desktop validation: 69 renderer tests, 108 Electron tests and 113 browser
+tests passed; production build, TypeScript and API consistency checks passed.
+Browser validation combined 112 passing tests from the full run with a passing
+rerun of the dialog stress test after giving its 80 animated dismissals a
+60-second deadline. Its trace showed continued progress rather than a stuck dialog.
+The packaged Electron application passed all 14 smoke checks, including real
+pytest and diff-coverage checks with its bundled Python 3.14.8 and pytest 9.0.3 under APPCONTAINER. Real captures and
+an animated screen tour are in `bench/release/walkthrough/` and
+`bench/release/walkthrough.gif`.
+
+The real Rust and SDK-only .NET AppContainer probes passed, including host
+positive controls for denied file and network access. Full backend suite results
+are recorded at the end of this file when complete. The final dependency reports
+are `bench/release/npm-audit.json` and `bench/release/python-audit.json`.
+
+A real authenticated Claude attempt launched inside verified AppContainer;
+the provider refused it for weekly quota exhaustion. Its ERROR result is saved
+in `bench/release/claude-local.json` and `.html`. No model accuracy is claimed.
+This WSL host uses hybrid cgroups. Real Linux isolation tests run in a private
+mount namespace over its existing cgroup v2 mount, with unavailable resource
+controllers explicitly disabled only in the test harness. Memory and process-count
+enforcement still need the existing dedicated CI job or a suitable host. New remote
+CI execution, package registration/publication, Pages hosting and launch posts
+remain external release steps. No upstream/team implementation approval applies.
 
 ## 0. Status at a glance (read first)
 
@@ -22,7 +68,7 @@ The Linux platform in `execution/linux_check_box.py` supplies the existing `BoxP
 seam: private 0700 storage, Linux identities, scratch HOME/TMPDIR, and verified bubblewrap,
 seccomp and cgroup execution. Runtime binds are read-only: Python's venv/base install,
 Node's prefix and project node_modules, and offline GOROOT. Unsafe runtime roots and
-cargo/dotnet/uv are refused. Linux has no Windows runtime snapshot cache.
+Cargo and .NET SDKs now have read-only runtime binds and private offline caches; uv remains refused. Linux has no Windows runtime snapshot cache.
 
 Check runs journal Linux facts under `LINUX_SANDBOX`. Row and journal verification must
 agree with the box identity and network setting; AppContainer and Linux facts never
@@ -435,8 +481,8 @@ Measure: number of generated scenarios run, escapes found, escapes fixed.
 
 ### Phase 6: Release and users (ongoing, start after Phase 2)
 
-1. **License.** Required before calling it open source. The repo is shared with csshlok; agree
-   on a license with him first (Apache 2.0 recommended for the patent grant).
+1. **License.** Required before calling it open source. This fork is independently maintained. Record a license only where the owner
+   has the necessary rights; preserve upstream and third-party notices.
 2. One command install: `pipx install sentinel-runtime` (check the PyPI name), and a
    `sentinel doctor` command that checks bwrap, user namespaces, cgroup v2, and Git.
 3. README rewrite: 60 second quickstart on Linux, a GIF, an eval results table at the top.
@@ -467,7 +513,7 @@ Track in `bench/adoption.md`: stars, installs (PyPI downloads), external issues,
 
 1. D-03: how Linux boundary profiles are declared (Phase 1, item 1).
 2. Where `LINUX_SANDBOX` ranks in the Passport weakest boundary ordering.
-3. License, agreed with csshlok.
+3. License and preservation of upstream attribution.
 4. Whether to upstream this work to `csshlok/Sentinel` or keep it in the fork. Keep your own
    commits clearly attributable either way, since this phase is your individual contribution.
 
@@ -475,3 +521,50 @@ Track in `bench/adoption.md`: stars, installs (PyPI downloads), external issues,
 
 All six phases merged, CI green on Windows and Linux, `bench/` populated with reproducible
 results, and at least 20 external users or 100 stars, whichever comes first.
+
+## Independent fork verification (2026-10-06, continued into UTC 2026-10-07)
+
+Windows full backend collection: **2,444 tests**. The full run returned 2,351
+passed, 88 skipped and five failures. All five were corrected and the complete
+affected-module rerun returned **153 passed**. Combined coverage therefore has
+**2,356 passing cases and 88 platform/opt-in skips**, with no unresolved failure.
+The full run was not restarted after these focused corrections.
+
+Corrections from the full run: keep bounded sandbox output capture inside the
+execution boundary; explicitly review/pin rustup resolution as a process-starting
+execution module; use uv for the unconfined-toolchain refusal regression; update
+the portable Passport action's cryptography pin to 50.0.2; and make the recovery
+probe wait for the real child PID and prove all observed Job members terminate
+without assuming Python launchers create exactly two processes.
+
+Commands: `python -m pytest -o addopts= -v -rs` for the full Windows run;
+`python -m pytest -o addopts= -q backend/tests/core/test_subprocess_boundary.py
+backend/tests/execution/test_runner.py backend/tests/passport/test_portable_verify.py
+backend/tests/recovery/test_git_recovery.py backend/tests/evals/test_hidden.py`
+for the affected-module rerun. Local XML/log evidence is under `.tmp/` (ignored).
+Desktop: `npm test`, `npm run build`, `npm run test:e2e`, `npm run package:dir`,
+and `SENTINEL_SMOKE_REAL_CHECKS=1 npm run test:electron:smoke`.
+
+The final packaged Electron build is running with the isolated profile
+`%LOCALAPPDATA%/SentinelFork-verified`. It uses the bundled backend and receives
+successful health responses. Existing user data was preserved.
+
+Linux full-suite correction: the host-only logic-test resolver looked
+for npm solely in standalone Node layouts. Ubuntu installs npm-cli.js under
+`/usr/share/nodejs/npm/bin`; the production Linux resolver already supports it.
+The test harness now recognizes the same system layout. This changes no production
+isolation rule and still labels the test harness as unconfined host execution.
+
+Linux full backend collection: **2,111 passed, 328 skipped, five failures** out
+of 2,444. Those failures are now corrected; the affected-module rerun including
+KB end-to-end flows returned **157 passed, one Windows-only skip**. Combined
+unique full-suite coverage: **2,116 passing cases and 328 platform/opt-in skips**.
+The corrected real Linux kernel suite returned **143 passed, five skips** in
+46.76 seconds. No exercised failure remains unresolved. Full collections were
+not repeated after focused fixes; original results are retained honestly.
+
+Final summaries: `bench/release/verification.json`; detailed security findings:
+`SECURITY_REVIEW.md`; dependency audits: `bench/release/npm-audit.json` and
+`bench/release/python-audit.json`. The final application window is Sentinel and
+its bundled backend health returned 200. No credentials or API tokens were
+included in the saved reports.

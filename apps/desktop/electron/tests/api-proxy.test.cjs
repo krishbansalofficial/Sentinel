@@ -119,6 +119,32 @@ test("reports an unavailable backend when no URL is set", async () => {
   await rejects(proxy({ method: "GET", path: "/api/v1/health" }), "backend_unreachable");
 });
 
+test("long execution deadlines are bounded and apply only to execution POSTs", async () => {
+  const original = AbortSignal.timeout;
+  const durations = [];
+  AbortSignal.timeout = (milliseconds) => {
+    durations.push(milliseconds);
+    return new AbortController().signal;
+  };
+  try {
+    const { proxy } = harness();
+    for (const path of ["verify", "agents/launch", "assurance/plan/run", "assurance/diff-coverage"]) {
+      await proxy({ method: "POST", path: `/api/v1/changes/id/${path}`, timeoutMs: 9_000_000 });
+      assert.equal(durations.at(-1), 4_500_000);
+    }
+    await proxy({ method: "GET", path: "/api/v1/changes/id/verify", timeoutMs: 9_000_000 });
+    assert.equal(durations.at(-1), 60_000);
+    await proxy({ method: "POST", path: "/api/v1/changes/id/evidence/current", timeoutMs: 9_000_000 });
+    assert.equal(durations.at(-1), 60_000);
+    for (const timeoutMs of [-1, Infinity, NaN, 0]) {
+      await proxy({ method: "POST", path: "/api/v1/changes/id/verify", timeoutMs });
+      assert.equal(durations.at(-1), 15_000);
+    }
+  } finally {
+    AbortSignal.timeout = original;
+  }
+});
+
 test("accepts only plain loopback http base URLs", () => {
   for (const good of ["http://127.0.0.1:8000", "http://localhost:9000"]) assert.ok(parseLoopbackBase(good));
   for (const bad of [

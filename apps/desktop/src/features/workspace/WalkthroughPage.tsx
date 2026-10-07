@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { actorListQuery, githubStatusQuery } from "@/services/actions";
 import { changeListQuery } from "@/services/changes";
 
-export const WALKTHROUGH_KEY = "ca.walkthrough-seen.v1";
+import { WALKTHROUGH_KEY } from "@/lib/walkthrough";
 
 interface Step { title: string; why: string; where: string; to: string; action: string; done?: boolean }
 

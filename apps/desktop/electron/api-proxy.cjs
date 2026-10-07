@@ -61,7 +61,12 @@ function createApiProxy({ getBaseUrl, getToken, fetchImpl = fetch }) {
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const signal = AbortSignal.timeout(Math.min(Number(timeoutMs) || DEFAULT_TIMEOUT_MS, 60_000));
+    const longExecution = method === "POST" && /^\/api\/v1\/changes\/[^/?]+\/(?:verify|agents\/launch|assurance\/(?:diff-coverage|[^/?]+\/run))$/.test(path);
+    const requestedTimeout = Number(timeoutMs);
+    const boundedTimeout = Number.isFinite(requestedTimeout) && requestedTimeout > 0
+      ? Math.min(Math.floor(requestedTimeout), longExecution ? 4_500_000 : 60_000)
+      : DEFAULT_TIMEOUT_MS;
+    const signal = AbortSignal.timeout(boundedTimeout);
     let response;
     try {
       response = await fetchImpl(origin + path, { method, headers, body: payload, signal, redirect: "error" });
