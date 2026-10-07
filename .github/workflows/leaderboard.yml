@@ -1,0 +1,66 @@
+name: Leaderboard
+
+# Phase 6 of HANDOFF.md: publish the static eval leaderboard on GitHub Pages. It is built only
+# from results files committed under bench/ (explicit inputs, listed below), never from a live
+# backend. Enable Pages with "GitHub Actions" as the source in the repository settings.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'bench/**/*.json'
+      - 'backend/app/evals/**'
+      - '.github/workflows/leaderboard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Install the pinned project
+        run: python -m pip install -e .
+      - name: Build the leaderboard and per-run reports
+        run: |
+          set -eu
+          mkdir -p _site/runs
+          sentinel eval leaderboard \
+            bench/observability/mock-smoke.json \
+            bench/regression_detection/results/baseline-a.json \
+            bench/regression_detection/results/baseline-b.json \
+            bench/regression_detection/results/degraded.json \
+            bench/regression_detection/results/broken-prompt.json \
+            --html _site/index.html
+          for name in baseline-a baseline-b degraded broken-prompt; do
+            sentinel eval report "bench/regression_detection/results/$name.json" \
+              --html "_site/runs/$name.html"
+          done
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

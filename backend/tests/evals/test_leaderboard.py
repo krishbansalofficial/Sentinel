@@ -35,3 +35,31 @@ def test_cli_generates_static_page(tmp_path):
     result = CliRunner().invoke(app, ["eval", "leaderboard", str(source), "--html", str(target)])
     assert result.exit_code == 0, result.output
     assert "run-1" in target.read_text()
+
+
+def test_pages_workflow_builds_from_committed_results(tmp_path):
+    """Every results file the Pages workflow publishes exists, loads and renders."""
+    import re
+    import shlex
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    workflow = (root / ".github" / "workflows" / "leaderboard.yml").read_text(encoding="utf-8")
+    block = workflow[workflow.index("sentinel eval leaderboard"):workflow.index("--html _site")]
+    inputs = [part for part in shlex.split(block.replace("\\\n", " "))[3:]]
+    assert len(inputs) == 5 and all(path.endswith(".json") for path in inputs)
+    target = tmp_path / "_site" / "index.html"
+    result = CliRunner().invoke(app, ["eval", "leaderboard", *[str(root / path) for path in inputs],
+                                      "--html", str(target)])
+    assert result.exit_code == 0, result.output
+    page = target.read_text(encoding="utf-8")
+    for name in ("baseline-a", "baseline-b", "degraded", "broken-prompt"):
+        assert name in page
+    assert "LINUX_SANDBOX: 90" in page and "UNCONFINED: 1" in page
+    names = re.search(r"for name in ([^;]+);", workflow).group(1).split()
+    for name in names:
+        report = tmp_path / "_site" / "runs" / f"{name}.html"
+        source = root / "bench" / "regression_detection" / "results" / f"{name}.json"
+        result = CliRunner().invoke(app, ["eval", "report", str(source), "--html", str(report)])
+        assert result.exit_code == 0, result.output
+        assert "Hidden tests ran under: LINUX_SANDBOX: 90" in report.read_text(encoding="utf-8")

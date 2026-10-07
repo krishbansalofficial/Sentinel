@@ -48,3 +48,23 @@ export function compareRuns(a: RunLike, b: RunLike): Comparison {
     onlyInB: [...tasksB.keys()].filter(id => !tasksA.has(id)).sort(),
   };
 }
+
+/** The backend's `sentinel eval compare` result: paired bootstrap plus the regression verdict. */
+export interface ServerComparison {
+  regression: boolean;
+  overall_delta: number;
+  bootstrap?: { mean_difference: number; low: number; high: number; resamples: number; tasks: number } | null;
+}
+
+export type VerdictTone = "regression" | "improvement" | "neutral";
+
+const points = (value: number) => `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} pts`;
+
+/** One sentence for the verdict, naming the test that decided it. */
+export function describeVerdict(server: ServerComparison): { tone: VerdictTone; text: string } {
+  const boot = server.bootstrap;
+  const interval = boot ? ` (paired bootstrap mean ${points(boot.mean_difference)}, 95% ${points(boot.low)} to ${points(boot.high)} over ${boot.tasks} tasks)` : "";
+  if (server.regression) return { tone: "regression", text: `Regression${interval}` };
+  if (boot && boot.low > 0) return { tone: "improvement", text: `Significant improvement${interval}` };
+  return { tone: "neutral", text: `No significant regression${interval}` };
+}

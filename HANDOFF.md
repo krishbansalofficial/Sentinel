@@ -17,6 +17,23 @@ Written: 2026-10-03. Status updated 2026-10-09. Read this whole file before touc
 
 Verification for `b00ad7b`..`42aea0a` (2026-10-09): Windows targeted suites (core, evals, policy, launcher, contract, AppContainer fuzz) green after the fixes in those commits; Linux full suite 2024 passed with the only failures being the README count and CI pin tests fixed in `42aea0a`/`b00ad7b` and telemetry tests needing the `[telemetry]` extra (86/86 green with it); desktop typecheck, api:check and 65 unit tests green. Docker is only the Windows dev box's way to reach a Linux kernel for tests; Sentinel never uses Docker at runtime.
 
+### Eval comparison everywhere, TUI Eval screen, leaderboard publication (2026-10-06)
+* API (additive): `GET /api/v1/evals/runs/{id}/attempts` (per-attempt results, unknown
+  fields null) and `GET /api/v1/evals/compare?baseline=&candidate=` (the CLI's comparison:
+  per-task deltas, flips, paired bootstrap, regression verdict) over stored attempts.
+  `openapi.json` and the desktop client regenerated.
+* Desktop Eval page: the compare panel shows the backend's bootstrap verdict (no longer
+  "use the CLI"); each run has an on-demand Attempts table. Unit and Playwright tests added.
+* TUI: `e` on the dashboard opens an Eval screen (runs, intervals, latest-vs-previous
+  verdict with flipped tasks), tested against a live server.
+* Phase 6.4: `.github/workflows/leaderboard.yml` publishes the static leaderboard and
+  per-run reports from committed results to GitHub Pages; a test runs the same build.
+  Enable Pages ("GitHub Actions" source) in the repository settings before the first run.
+  The Pages actions are tag-pinned (`@v3`/`@v4`); pin them to SHAs like `ci.yml` if wanted.
+* Still open (needs a person or a host): a real `--agent claude` run, license, package name
+  and PyPI, Windows CI confirmation, Windows fuzz follow-ups, GIF and launch. `/metrics`
+  has no queue depth because the eval queue lives beside the results file, not in the backend.
+
 ### Eval audit and mock backtest (2026-10-06)
 Bugs found and fixed (each has a regression test that fails on the old code):
 * `SandboxHiddenTestRunner` read the wrapper's `returncode`, which `communicate()` on the
@@ -431,9 +448,11 @@ infrastructure.
 4. Per job budgets: timeout, max cost, max descendant processes.
 
 Acceptance:
-- [ ] Kill the backend with `SIGKILL` mid run; on restart every job finishes exactly once and
-      no orphan processes or cgroups remain.
-- [ ] A chaos test kills random workers during a 100 job run and the final report is complete.
+- [x] Kill the backend with `SIGKILL` mid run; on restart every job finishes exactly once and
+      no orphan processes or cgroups remain. (`evals/test_queue.py::
+      test_sigkill_mid_run_then_restart_finishes_every_job_once`.)
+- [x] A chaos test kills random workers during a 100 job run and the final report is complete.
+      (`evals/test_queue.py::test_chaos_random_worker_kills_during_a_100_job_run`.)
 
 Measure in `bench/concurrency/`: throughput (jobs per hour) and queue delay at concurrency 1,
 4, 8, 16 on stated hardware; recovery time after a kill.
