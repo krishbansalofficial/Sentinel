@@ -1082,6 +1082,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evals/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Eval Runs */
+        get: operations["list_eval_runs_api_v1_evals_runs_get"];
+        put?: never;
+        /** Record Eval Run */
+        post: operations["record_eval_run_api_v1_evals_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Eval Run */
+        get: operations["get_eval_run_api_v1_evals_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -2758,6 +2793,113 @@ export interface components {
             drift?: components["schemas"]["EnvironmentDrift"] | null;
             passport?: components["schemas"]["EnvironmentPassport"] | null;
         };
+        /** EvalRunListResponse */
+        EvalRunListResponse: {
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["EvalRunView"][];
+        };
+        /**
+         * EvalRunUpload
+         * @description A ``sentinel-eval-run/1`` results document, as ``sentinel eval run`` writes it.
+         */
+        EvalRunUpload: {
+            /** Completed At */
+            completed_at?: string | null;
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** K */
+            k: number;
+            /** Results */
+            results: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "sentinel-eval-run/1";
+            /** Started At */
+            started_at: string;
+            /** Suite */
+            suite: string;
+        };
+        /**
+         * EvalRunView
+         * @description A recorded eval run: pass rate with its 95% Wilson interval, cost, time, boundaries.
+         */
+        EvalRunView: {
+            /** Agent */
+            agent: string;
+            /** Attempts */
+            attempts: number;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Config Name */
+            config_name: string;
+            /** Cost Unknown */
+            cost_unknown: number;
+            /** Errors */
+            errors: number;
+            /** Hidden Boundaries */
+            hidden_boundaries?: {
+                [key: string]: number;
+            };
+            /** High */
+            high: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** K */
+            k: number;
+            /** Low */
+            low: number;
+            /** Mean Cost Usd */
+            mean_cost_usd?: number | null;
+            /** Model */
+            model?: string | null;
+            /** Passes */
+            passes: number;
+            /** Rate */
+            rate: number;
+            /** Started At */
+            started_at: string;
+            /** Suite */
+            suite: string;
+            /** Tasks */
+            tasks?: components["schemas"]["EvalTaskView"][];
+            /** Wall P50 Seconds */
+            wall_p50_seconds?: number | null;
+            /** Wall P95 Seconds */
+            wall_p95_seconds?: number | null;
+        };
+        /** EvalTaskView */
+        EvalTaskView: {
+            /** Attempts */
+            attempts: number;
+            /** Errors */
+            errors: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Passes */
+            passes: number;
+            /** Rate */
+            rate: number;
+            /** Task Id */
+            task_id: string;
+        };
         /**
          * EvidenceOverview
          * @description What has been captured so far for one Change (read-only).
@@ -3096,7 +3238,7 @@ export interface components {
          *     event types below; it is not a filesystem or tool-call trace.
          * @enum {string}
          */
-        JournalEventType: "change.created" | "change.contract_updated" | "change.transitioned" | "change.git_summary_refreshed" | "change.legacy_verification_run" | "change.deleted" | "delegation.issued" | "delegation.revoked" | "credential.grant.issued" | "credential.grant.revoked" | "credential.secret.resolved" | "git.checkpoint.captured" | "agent.launched" | "agent.attached" | "agent.stop_requested" | "agent.completed" | "agent.descendant.observed" | "agent.descendant.terminated" | "agent.process_tree.terminated" | "environment.passport.captured" | "dependency.report.captured" | "assurance.plan.created" | "assurance.check.completed" | "provider.pull_request.created" | "provider.pull_request.refreshed" | "provider.pull_request.closed" | "provider.ci_refreshed" | "outcome.recorded" | "recovery.plan.created" | "recovery.action.completed" | "recovery.plan.completed" | "passport.built" | "passport.export.signed" | "policy.decision.denied" | "tool.manifest.registered" | "tool.trust.decided" | "tool.trust.invalidated" | "agent.paused" | "agent.resumed" | "change.forked" | "workspace.created" | "workspace.sealed" | "workspace.applied" | "workspace.apply_refused" | "workspace.cleaned" | "check.confined_run" | "check.unconfined_run";
+        JournalEventType: "change.created" | "change.contract_updated" | "change.transitioned" | "change.git_summary_refreshed" | "change.legacy_verification_run" | "change.deleted" | "delegation.issued" | "delegation.revoked" | "credential.grant.issued" | "credential.grant.revoked" | "credential.secret.resolved" | "git.checkpoint.captured" | "agent.launched" | "agent.attached" | "agent.stop_requested" | "agent.completed" | "agent.descendant.observed" | "agent.descendant.terminated" | "agent.process_tree.terminated" | "environment.passport.captured" | "dependency.report.captured" | "assurance.plan.created" | "assurance.check.completed" | "provider.pull_request.created" | "provider.pull_request.refreshed" | "provider.pull_request.closed" | "provider.ci_refreshed" | "outcome.recorded" | "recovery.plan.created" | "recovery.action.completed" | "recovery.plan.completed" | "passport.built" | "passport.export.signed" | "policy.decision.denied" | "tool.manifest.registered" | "tool.trust.decided" | "tool.trust.invalidated" | "agent.paused" | "agent.resumed" | "change.forked" | "workspace.created" | "workspace.sealed" | "workspace.applied" | "workspace.apply_refused" | "workspace.cleaned" | "check.confined_run" | "eval.result_recorded" | "check.unconfined_run";
         /** Outcome */
         Outcome: {
             /**
@@ -6398,6 +6540,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Delegation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_eval_runs_api_v1_evals_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalRunListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_eval_run_api_v1_evals_runs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalRunUpload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalRunView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_run_api_v1_evals_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalRunView"];
                 };
             };
             /** @description Validation Error */

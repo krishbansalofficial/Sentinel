@@ -823,6 +823,8 @@ class JournalEventType(StrEnum):
     WORKSPACE_CLEANED = "workspace.cleaned"
     # Phase 5 (05-02): one confined check run inside a per-run AppContainer box.
     CHECK_CONFINED_RUN = "check.confined_run"
+    # Additive (Phase 2): an eval attempt that ran on this Change was recorded.
+    EVAL_RESULT_RECORDED = "eval.result_recorded"
     # Phase 5 (05-03): a check run outside any box under a delegated checks.unconfined opt-in.
     CHECK_UNCONFINED_RUN = "check.unconfined_run"
 
@@ -1117,6 +1119,61 @@ class GitCheckpointListResponse(ContractModel):
 class AssuranceRunListResponse(ContractModel):
     items: list[AssuranceRun]
     count: int = Field(ge=0)
+
+
+class EvalRunUpload(ContractModel):
+    """A ``sentinel-eval-run/1`` results document, as ``sentinel eval run`` writes it."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_: Literal["sentinel-eval-run/1"] = Field(alias="schema")
+    id: UUID
+    suite: ShortText
+    config: dict[str, Any]
+    k: int = Field(ge=1, le=1000)
+    started_at: str = Field(max_length=64)
+    completed_at: str | None = Field(default=None, max_length=64)
+    results: list[dict[str, Any]] = Field(max_length=20000)
+
+
+class EvalTaskView(ContractModel):
+    task_id: ShortText
+    passes: int = Field(ge=0)
+    attempts: int = Field(ge=0)
+    errors: int = Field(ge=0)
+    rate: float
+    low: float
+    high: float
+
+
+class EvalRunView(ContractModel):
+    """A recorded eval run: pass rate with its 95% Wilson interval, cost, time, boundaries."""
+
+    id: UUID
+    suite: ShortText
+    config_name: ShortText
+    agent: ShortText
+    model: str | None = None
+    k: int
+    started_at: str
+    completed_at: str | None = None
+    passes: int
+    attempts: int
+    errors: int
+    rate: float
+    low: float
+    high: float
+    mean_cost_usd: float | None = None
+    cost_unknown: int
+    wall_p50_seconds: float | None = None
+    wall_p95_seconds: float | None = None
+    hidden_boundaries: dict[str, int] = Field(default_factory=dict)
+    tasks: list[EvalTaskView] = Field(default_factory=list)
+
+
+class EvalRunListResponse(ContractModel):
+    items: list[EvalRunView]
+    count: int
 
 
 class HealthResponse(ContractModel):

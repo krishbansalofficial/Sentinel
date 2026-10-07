@@ -360,6 +360,7 @@ PROCESS_STARTING_EXECUTION_MODULES = {
     "tool_probe.py": "tool --version probes (PATH tools, not repository code)",
     "signature.py": "Authenticode check of a registered tool",
     "linux_sandbox.py": "verified bubblewrap launch for agents (and its bwrap feature probe)",
+    "hidden_host.py": "eval hidden tests, only behind --allow-unconfined-hidden-tests (UNCONFINED)",
 }
 _SPAWN_MARKERS = ("capture(", "Popen(", "subprocess.run(", "CreateProcess")
 CHECK_RUNNER_MODULES = (

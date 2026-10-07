@@ -3505,6 +3505,298 @@
         "title": "EnvironmentView",
         "type": "object"
       },
+      "EvalRunListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvalRunView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "EvalRunListResponse",
+        "type": "object"
+      },
+      "EvalRunUpload": {
+        "additionalProperties": false,
+        "description": "A ``sentinel-eval-run/1`` results document, as ``sentinel eval run`` writes it.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "k": {
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "K",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 20000,
+            "title": "Results",
+            "type": "array"
+          },
+          "schema": {
+            "const": "sentinel-eval-run/1",
+            "title": "Schema",
+            "type": "string"
+          },
+          "started_at": {
+            "maxLength": 64,
+            "title": "Started At",
+            "type": "string"
+          },
+          "suite": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Suite",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "id",
+          "suite",
+          "config",
+          "k",
+          "started_at",
+          "results"
+        ],
+        "title": "EvalRunUpload",
+        "type": "object"
+      },
+      "EvalRunView": {
+        "additionalProperties": false,
+        "description": "A recorded eval run: pass rate with its 95% Wilson interval, cost, time, boundaries.",
+        "properties": {
+          "agent": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Agent",
+            "type": "string"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "config_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Config Name",
+            "type": "string"
+          },
+          "cost_unknown": {
+            "title": "Cost Unknown",
+            "type": "integer"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "hidden_boundaries": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Hidden Boundaries",
+            "type": "object"
+          },
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "k": {
+            "title": "K",
+            "type": "integer"
+          },
+          "low": {
+            "title": "Low",
+            "type": "number"
+          },
+          "mean_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Cost Usd"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "passes": {
+            "title": "Passes",
+            "type": "integer"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "suite": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Suite",
+            "type": "string"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/EvalTaskView"
+            },
+            "title": "Tasks",
+            "type": "array"
+          },
+          "wall_p50_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wall P50 Seconds"
+          },
+          "wall_p95_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wall P95 Seconds"
+          }
+        },
+        "required": [
+          "id",
+          "suite",
+          "config_name",
+          "agent",
+          "k",
+          "started_at",
+          "passes",
+          "attempts",
+          "errors",
+          "rate",
+          "low",
+          "high",
+          "cost_unknown"
+        ],
+        "title": "EvalRunView",
+        "type": "object"
+      },
+      "EvalTaskView": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "minimum": 0.0,
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "errors": {
+            "minimum": 0.0,
+            "title": "Errors",
+            "type": "integer"
+          },
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "title": "Low",
+            "type": "number"
+          },
+          "passes": {
+            "minimum": 0.0,
+            "title": "Passes",
+            "type": "integer"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          },
+          "task_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "passes",
+          "attempts",
+          "errors",
+          "rate",
+          "low",
+          "high"
+        ],
+        "title": "EvalTaskView",
+        "type": "object"
+      },
       "EvidenceOverview": {
         "additionalProperties": false,
         "description": "What has been captured so far for one Change (read-only).",
@@ -4502,6 +4794,7 @@
           "workspace.apply_refused",
           "workspace.cleaned",
           "check.confined_run",
+          "eval.result_recorded",
           "check.unconfined_run"
         ],
         "title": "JournalEventType",
@@ -11553,6 +11846,183 @@
         "summary": "Revoke Delegation",
         "tags": [
           "identity"
+        ]
+      }
+    },
+    "/api/v1/evals/runs": {
+      "get": {
+        "operationId": "list_eval_runs_api_v1_evals_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalRunListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Eval Runs",
+        "tags": [
+          "evals"
+        ]
+      },
+      "post": {
+        "operationId": "record_eval_run_api_v1_evals_runs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvalRunUpload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalRunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Eval Run",
+        "tags": [
+          "evals"
+        ]
+      }
+    },
+    "/api/v1/evals/runs/{run_id}": {
+      "get": {
+        "operationId": "get_eval_run_api_v1_evals_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalRunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Eval Run",
+        "tags": [
+          "evals"
         ]
       }
     },

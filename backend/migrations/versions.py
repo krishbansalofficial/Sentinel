@@ -670,6 +670,36 @@ def migration_013_check_runs(connection: sqlite3.Connection) -> None:
     )
 
 
+def migration_014_eval_runs(connection: sqlite3.Connection) -> None:
+    """Agent Regression Lab (Phase 2): recorded eval runs and every attempt's result."""
+
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS eval_runs ("
+        "id TEXT PRIMARY KEY, "
+        "suite TEXT NOT NULL, "
+        "config_json TEXT NOT NULL, "
+        "k INTEGER NOT NULL CHECK (k >= 1), "
+        "started_at TEXT NOT NULL, "
+        "completed_at TEXT NULL, "
+        "summary_json TEXT NOT NULL, "
+        "created_at TEXT NOT NULL)"
+    )
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS eval_results ("
+        "run_id TEXT NOT NULL REFERENCES eval_runs(id) ON DELETE CASCADE, "
+        "task_id TEXT NOT NULL, "
+        "attempt INTEGER NOT NULL CHECK (attempt >= 1), "
+        "status TEXT NOT NULL CHECK (status IN ('PASSED', 'FAILED', 'ERROR')), "
+        "change_id TEXT NULL, "
+        "payload_json TEXT NOT NULL, "
+        "created_at TEXT NOT NULL, "
+        "PRIMARY KEY (run_id, task_id, attempt))"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_eval_runs_started ON eval_runs(started_at)"
+    )
+
+
 MIGRATIONS = (
     Migration(1, "legacy_change_store", migration_001_legacy_change_store),
     Migration(2, "change_runtime_core", migration_002_change_runtime_core),
@@ -684,6 +714,7 @@ MIGRATIONS = (
     Migration(11, "diff_coverage_results", migration_011_diff_coverage_results),
     Migration(12, "change_workspaces", migration_012_change_workspaces),
     Migration(13, "check_runs", migration_013_check_runs),
+    Migration(14, "eval_runs", migration_014_eval_runs),
 )
 
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version

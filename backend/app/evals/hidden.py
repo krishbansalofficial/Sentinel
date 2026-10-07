@@ -140,14 +140,13 @@ class UnconfinedHiddenTestRunner:
     """
 
     def run(self, task: EvalTask, tree: Path, *, outcome: AgentOutcome) -> HiddenTestResult:
-        from backend.app.execution._process import capture, minimal_environment
+        from backend.app.execution.hidden_host import run_hidden_tests_unconfined
 
         argv = resolve_hidden_command(task.hidden_test_command) if os.name != "nt" else [
             os.path.realpath(sys.executable) if part in ("python", "python3") else part
             for part in task.hidden_test_command]
         started = time.monotonic()
-        result = capture(argv, cwd=tree, env=minimal_environment(), timeout=task.timeout_seconds,
-                         limit=256 * 1024, max_timeout=task.timeout_seconds)
+        result = run_hidden_tests_unconfined(argv, cwd=tree, timeout=task.timeout_seconds)
         return HiddenTestResult(
             passed=(not result.timed_out and result.returncode == 0),
             exit_code=None if result.timed_out else result.returncode,

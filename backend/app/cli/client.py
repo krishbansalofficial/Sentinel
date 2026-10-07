@@ -481,6 +481,12 @@ class ApiClient:
         return self._request("GET", f"/api/v1/changes/{change_id}/replay/export")
 
     # -- tool registry --
+    def record_eval_run(self, document: dict[str, Any]) -> Any:
+        return self._request("POST", "/api/v1/evals/runs", json_body=document)
+
+    def list_eval_runs(self, *, limit: int = 100) -> Any:
+        return self._request("GET", f"/api/v1/evals/runs?limit={int(limit)}")
+
     def list_tools(self) -> Any:
         return self._request("GET", "/api/v1/tools")
 

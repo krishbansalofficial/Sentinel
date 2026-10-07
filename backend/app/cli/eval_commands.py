@@ -63,6 +63,7 @@ def run_command(
     mock_skill: float = typer.Option(0.85, "--mock-skill"),
     seed: int = typer.Option(0, "--seed"),
     allow_unconfined: bool = typer.Option(False, "--allow-unconfined-hidden-tests"),
+    record: bool = typer.Option(False, "--record", help="Also store the run in the backend"),
     api_url: str = typer.Option("http://127.0.0.1:8000", "--api-url",
                                 envvar="CHANGE_ASSURANCE_API_URL"),
 ) -> None:
@@ -94,8 +95,12 @@ def run_command(
     if html_out is not None:
         html_out.parent.mkdir(parents=True, exist_ok=True)
         html_out.write_text(render_html(document), encoding="utf-8")
+    if record:
+        from backend.app.cli.client import ApiClient
+
+        (client or ApiClient(api_url)).record_eval_run(document)
     summary = summarize(document)
-    typer.echo(json.dumps({"results": str(target), "passes": summary.passes,
+    typer.echo(json.dumps({"results": str(target), "recorded": record, "passes": summary.passes,
                            "attempts": summary.attempts, "rate": summary.rate,
                            "interval": [summary.low, summary.high], "errors": summary.errors},
                           sort_keys=True))

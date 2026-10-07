@@ -18,6 +18,9 @@ from backend.app.assurance.service import (
 )
 from backend.app.contracts.models import (
     ActorActionRequest,
+    EvalRunListResponse,
+    EvalRunUpload,
+    EvalRunView,
     Actor,
     ActorCreateRequest,
     ActorListResponse,
@@ -1015,6 +1018,20 @@ def build_router(service: ChangeService, runtime: RuntimeServices) -> APIRouter:
 
     # -- Tool Registry (bounded scope: top-level executable + declared -------
     # manifests only; see B.1/B.10 non-goals echoed in every response) --------
+
+    @router.post("/evals/runs", response_model=EvalRunView, status_code=201, tags=["evals"])
+    def record_eval_run(request: EvalRunUpload) -> EvalRunView:
+        return EvalRunView.model_validate(
+            runtime.evals.record(request.model_dump(mode="json", by_alias=True)))
+
+    @router.get("/evals/runs", response_model=EvalRunListResponse, tags=["evals"])
+    def list_eval_runs(limit: int = Query(default=100, ge=1, le=500)) -> EvalRunListResponse:
+        items = [EvalRunView.model_validate(item) for item in runtime.evals.list(limit=limit)]
+        return EvalRunListResponse(items=items, count=len(items))
+
+    @router.get("/evals/runs/{run_id}", response_model=EvalRunView, tags=["evals"])
+    def get_eval_run(run_id: UUID) -> EvalRunView:
+        return EvalRunView.model_validate(runtime.evals.get(str(run_id)))
 
     @router.get(
         "/tools",
