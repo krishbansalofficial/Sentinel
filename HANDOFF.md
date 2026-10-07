@@ -706,3 +706,36 @@ sandbox job passed, with pids/memory/cpu controllers enabled. This supersedes th
 prior claim that resource-controller validation lacked remote CI evidence. WSL
 still lacks those controllers locally. Windows backend jobs were still running
 when this desktop fix was prepared.
+
+## CI #54 packaging follow-up (2026-10-06 EDT)
+
+Run 37563558121 confirmed the browser fix remotely: **115 passed, one opt-in
+skip** in 7.7 minutes, without failures or flaky cases. It then reached the
+previously unexecuted staging step and failed with empty signature status/subject.
+The old signature subprocess did not check launch/exit errors or expose stderr.
+The observed output does not establish a bad or unsigned Python download: the
+pinned official archive SHA-256 matched. Signature verification remains mandatory.
+
+The staging helper now uses the absolute Windows PowerShell host, removes
+inherited PSModulePath entries (including differently cased names), imports that
+host's built-in Microsoft.PowerShell.Security module explicitly, and passes its
+literal-path script through UTF-16LE EncodedCommand. It runs noninteractively with
+errors set to Stop, a 30-second deadline and hidden window. Structured JSON carries
+status and publisher. Launch errors, nonzero exits, malformed output, unsigned
+files and wrong publishers all fail closed with actionable diagnostics. This
+isolates module/quoting differences between PowerShell 7 CI and Windows PowerShell.
+No signature or checksum verification is bypassed.
+
+Added regression tests for system-host selection, encoded literal quoting,
+module-path removal and every refusal case. **110 Electron unit tests passed**;
+a real signature check returned Valid/Python Software Foundation. The complete
+local package rebuild passed, and **all 14 Electron smoke checks passed** again.
+Only staging/policy/tests and CI ordering changed after the successful remote
+browser run. Package build/smoke steps now run before the long browser soak so
+future packaging failures surface earlier. A normal direct-master push triggers
+another remote validation run. Logs: `.tmp/ci54-package-fixed.log`,
+`.tmp/ci54-electron-fixed.log`, `.tmp/ci54-signature-tests.log`.
+
+All four backend jobs from #53 (Windows/Linux, Python 3.12/3.14) and its dedicated
+Linux kernel sandbox job subsequently completed successfully. The original #53
+failure was confined to desktop, and #54's browser stage is now green.

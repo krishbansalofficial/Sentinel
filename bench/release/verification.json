@@ -110,6 +110,18 @@
     "remote_linux_backend_3_12": "success",
     "remote_linux_backend_3_14": "success",
     "remote_linux_sandbox_with_resource_controllers": "success",
-    "remote_updated_desktop": "pending"
+    "remote_updated_desktop": "browser passed in #54; packaging signature subprocess failed, fixed in follow-up"
+  },
+  "ci54_packaging_followup": {
+    "source_run": 37563558121,
+    "remote_browser_passed": 115,
+    "remote_browser_skipped": 1,
+    "remote_browser_flaky": 0,
+    "electron_unit_passed": 110,
+    "local_packaged_signature": "Valid / Python Software Foundation",
+    "local_packaged_smoke_passed": 14,
+    "ci53_backend_matrix": "all four jobs success",
+    "remote_desktop_after_packaging_fix": "pending",
+    "signature_and_checksum_checks": "mandatory; no bypass"
   }
 }

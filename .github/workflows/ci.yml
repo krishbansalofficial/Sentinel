@@ -119,10 +119,11 @@ jobs:
       - run: npm audit --audit-level=moderate
       - run: npm test
       - run: npm run build
-      - name: Install browser
-        run: npx playwright install chrome
-      - run: npm run test:e2e
+      # Validate packaging early so signature/staging errors do not wait for the browser soak.
       - name: Build self-contained Windows package
         run: npm run package:dir
       - name: Launch and check the packaged Electron app
         run: npm run test:electron:smoke
+      - name: Install browser
+        run: npx playwright install chrome
+      - run: npm run test:e2e

@@ -11,7 +11,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { backendSourceAllowed, powershellLiteral, readRuntimeRequirements } from "./stage-policy.mjs";
+import { backendSourceAllowed, powershellLiteral, readRuntimeRequirements, verifyPythonSignature } from "./stage-policy.mjs";
 
 const PYTHON_VERSION = "3.14.8";
 // Published SHA-256: https://www.python.org/downloads/release/python-3148/
@@ -60,17 +60,6 @@ async function downloadEmbeddable() {
   console.log(`Embeddable zip SHA-256: ${digest}`);
   if (EMBED_SHA256 && digest !== EMBED_SHA256) throw new Error("Embeddable Python zip does not match the pinned SHA-256.");
   return zip;
-}
-
-/** python.exe must be signed by the Python Software Foundation; a tampered download fails here. */
-function verifyPythonSignature(exe) {
-  const script = `$s = Get-AuthenticodeSignature -LiteralPath ${powershellLiteral(exe)}; "$($s.Status)|$($s.SignerCertificate.Subject)"`;
-  const result = spawnSync("powershell", ["-NoProfile", "-Command", script], { encoding: "utf8" });
-  const [status, subject = ""] = (result.stdout ?? "").trim().split("|");
-  if (status !== "Valid" || !/Python Software Foundation/i.test(subject)) {
-    throw new Error(`python.exe signature check failed: status=${status} subject=${subject}`);
-  }
-  console.log(`python.exe signature: ${status} (${subject.split(",")[0]})`);
 }
 
 function configureEmbeddable() {
@@ -166,7 +155,8 @@ async function main() {
     "-Command",
     `Expand-Archive -LiteralPath ${powershellLiteral(zip)} -DestinationPath ${powershellLiteral(pythonDir)} -Force`,
   ]);
-  verifyPythonSignature(join(pythonDir, "python.exe"));
+  const signature = verifyPythonSignature(join(pythonDir, "python.exe"));
+  console.log(`python.exe signature: ${signature.status} (${signature.subject.split(",")[0]})`);
   configureEmbeddable();
   installDependencies();
   copyBackend();
