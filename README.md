@@ -221,8 +221,8 @@ implement typed ports against that contract and are wired together in a single c
 
 ## Interfaces
 
-Every interface below talks to the same backend through the same frozen contract — 90
-operations across 84 routes, described by 147 typed schemas.
+Every interface below talks to the same backend through the same frozen contract — 92
+operations across 86 routes, described by 152 typed schemas.
 
 - **Backend** (`backend/app`) — a local FastAPI service and the single source of truth. SQLite in
   WAL mode, bearer-token authenticated, loopback by default.

@@ -1176,6 +1176,62 @@ class EvalRunListResponse(ContractModel):
     count: int
 
 
+class EvalAttemptView(ContractModel):
+    """One attempt of a recorded eval run; fields the attempt did not report stay null."""
+
+    task_id: ShortText
+    attempt: int = Field(ge=1)
+    status: Literal["PASSED", "FAILED", "ERROR"]
+    hidden_tests_absent: bool | None = None
+    wall_seconds: float | None = None
+    error: str | None = None
+    agent_status: str | None = None
+    cost_usd: float | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    change_id: str | None = None
+    passport_id: str | None = None
+    hidden_boundary: str | None = None
+    hidden_exit_code: int | None = None
+    hidden_timed_out: bool | None = None
+    hidden_output_tail: str | None = None
+
+
+class EvalAttemptListResponse(ContractModel):
+    items: list[EvalAttemptView]
+    count: int
+
+
+class EvalBootstrapView(ContractModel):
+    mean_difference: float
+    low: float
+    high: float
+    resamples: int
+    tasks: int
+
+
+class EvalTaskDelta(ContractModel):
+    task_id: ShortText
+    rate_a: float
+    rate_b: float
+    delta: float
+    flip: Literal["regressed", "improved"] | None = None
+
+
+class EvalComparisonView(ContractModel):
+    """``sentinel eval compare`` over two recorded runs (B is the candidate)."""
+
+    baseline_id: UUID
+    candidate_id: UUID
+    overall_delta: float
+    regression: bool
+    intervals_separate: bool
+    bootstrap: EvalBootstrapView | None = None
+    tasks: list[EvalTaskDelta] = Field(default_factory=list)
+    only_in_a: list[ShortText] = Field(default_factory=list)
+    only_in_b: list[ShortText] = Field(default_factory=list)
+
+
 class HealthResponse(ContractModel):
     status: str
     api_version: str
