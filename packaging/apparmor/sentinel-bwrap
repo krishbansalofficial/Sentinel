@@ -4,8 +4,18 @@
 # Without it, the kernel moves bwrap's new user namespace into the `unprivileged_userns`
 # profile, which denies the capabilities bwrap needs inside it (for example bringing up
 # loopback in the new network namespace), and Sentinel's Linux sandbox fails closed.
-# This grants the `userns` permission to /usr/bin/bwrap only, instead of turning the
-# restriction off for every program on the machine.
+# This grants the `userns` permission to bwrap only, instead of turning the restriction
+# off for every program on the machine.
+#
+# Trade-off (read before installing): the restriction exists to shrink the kernel attack
+# surface that unprivileged user namespaces expose. Attached to /usr/bin/bwrap, this lets
+# EVERY local user reach that surface through bwrap, not only Sentinel. On a shared machine
+# prefer a narrower setup: copy bwrap to a root-owned path executable only by a dedicated
+# group, e.g.
+#   install -o root -g sentinel -m 0750 /usr/bin/bwrap /usr/local/lib/sentinel/bwrap
+# change the attachment path below to /usr/local/lib/sentinel/bwrap, and run Sentinel with
+# SENTINEL_BWRAP=/usr/local/lib/sentinel/bwrap as a member of that group. Sentinel never
+# installs this profile itself; CI uses it on throwaway runners.
 #
 # Install (as root):
 #   install -m 0644 packaging/apparmor/sentinel-bwrap /etc/apparmor.d/sentinel-bwrap
