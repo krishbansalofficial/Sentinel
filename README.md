@@ -30,17 +30,6 @@ Linux agent requires bubblewrap, usable user namespaces and delegated cgroup v2 
 [the shipped profile](packaging/apparmor/sentinel-bwrap). Windows uses AppContainer and Job
 Objects. Checks run in confined boxes on both platforms; unavailable checks fail closed.
 
-<p align="center">
-  <img src="bench/release/demo/sentinel-tui-evals.gif" width="760"
-       alt="The Sentinel terminal UI: a Change, then the Eval screen flagging a regression">
-</p>
-
-The terminal UI against a real backend holding three recorded backtest runs (mock agent, so
-cost is synthetic; every hidden test ran in the verified Linux sandbox). The Eval screen shows
-the same verdict as `sentinel eval compare`. How it was recorded:
-[`bench/release/demo`](bench/release/demo/README.md); the runs:
-[`bench/regression_detection`](bench/regression_detection/README.md).
-
 | Recorded evaluation | Attempts | Passed | Wilson 95% interval | Boundary |
 | --- | ---: | ---: | --- | --- |
 | Mock smoke, `op-add`, skill=1 | 1 | 1 | 20.7%–100.0% | UNCONFINED |

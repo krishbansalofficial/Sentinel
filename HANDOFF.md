@@ -13,7 +13,7 @@ Written: 2026-10-03. Status updated 2026-10-09. Read this whole file before touc
 | 3. Queue and crash recovery | **Done**: queue, pool, fencing, SIGKILL + chaos tests, bench, `eval run --workers/--queue/--resume` | `997406e`, `5ad8598` |
 | 4. Observability | **Done**: optional OTLP spans (`[telemetry]` extra), connected Jaeger trace, `/api/v1/metrics` (hardened: counts only Sentinel's own refusal lines), desktop Eval page with run comparison | `75962e0`, `b00ad7b`, `a934b9f`, `4c6a6e4` |
 | 5. Adversarial fuzzer | **Linux done** (40 scenarios, 153 behaviors, 0 escapes); Windows seeded AppContainer fuzzer passes 12 scenarios / 48 behavior attempts, 0 observed escapes | `bench/fuzz/`, `9cc2d40`, `42aea0a`; Windows child-spawn attempts were refused on this host |
-| 6. Release and users | **Mostly done**: Apache-2.0 license, `sentinel-runtime` package with a tag-triggered PyPI release workflow (trusted publishing), doctor, contribution docs/templates, README quickstart + GIF + honest mock eval table, leaderboard Pages workflow. Remaining (need kb): PyPI trusted-publisher setup and first `v0.1.0` tag, enabling Pages, real Claude results, launch | `bench/release/`, `.github/workflows/{release,leaderboard}.yml` |
+| 6. Release and users | **Mostly done**: Apache-2.0 license, `sentinel-runtime` package with a tag-triggered PyPI release workflow (trusted publishing), doctor, contribution docs/templates, README quickstart + honest mock eval table, leaderboard Pages workflow. Remaining: README GIF; (need kb) PyPI trusted-publisher setup and first `v0.1.0` tag, enabling Pages, real Claude results, launch | `bench/release/`, `.github/workflows/{release,leaderboard}.yml` |
 
 Verification for `b00ad7b`..`42aea0a` (2026-10-09): Windows targeted suites (core, evals, policy, launcher, contract, AppContainer fuzz) green after the fixes in those commits; Linux full suite 2024 passed with the only failures being the README count and CI pin tests fixed in `42aea0a`/`b00ad7b` and telemetry tests needing the `[telemetry]` extra (86/86 green with it); desktop typecheck, api:check and 65 unit tests green. Docker is only the Windows dev box's way to reach a Linux kernel for tests; Sentinel never uses Docker at runtime.
 
@@ -31,8 +31,6 @@ continued independently). The project is **Apache-2.0** (`LICENSE`, `NOTICE`,
   `v*` tag via PyPI trusted publishing (no token). To ship: on pypi.org add a pending trusted
   publisher (project `sentinel-runtime`, owner `krishbansalofficial`, repo `Sentinel`,
   workflow `release.yml`, environment `pypi`), then push tag `v0.1.0`.
-* README GIF: `bench/release/demo/sentinel-tui-evals.gif`, the real TUI against a real
-  backend holding committed backtest runs (`bench/release/demo/record_tui.py`).
 * Existing local checkouts: after pulling, run `pip install -e ".[test,tui,keyring,telemetry]"`
   again so the new distribution name is registered (uninstall `change-assurance` first, then
   reinstall, because both own the `sentinel` script).
@@ -197,9 +195,9 @@ not available in containers (do not change `.wslconfig`: it restarts WSL and Doc
    verification and controller limitations are recorded above.
 3. **Phase 5/6 follow-up**: extend Windows scenarios to race junctions and exercise successfully
    spawned hostile descendants on a suitable host; review `bench/fuzz/windows-results.xml`.
-   License (Apache-2.0), package name (`sentinel-runtime`), release workflow and GIF are done;
+   License (Apache-2.0), package name (`sentinel-runtime`) and release workflow are done;
    remaining: PyPI trusted-publisher setup and the first tag, enabling Pages, real agent
-   results, then launch. No public release was made.
+   results, a README GIF, then launch. No public release was made.
 
 Implementation verification (2026-10-04): 87 existing eval/contract tests passed; 51 targeted
 telemetry/hidden-runner/leaderboard/dependency/Windows boundary tests passed; 12 Windows fuzz
@@ -508,7 +506,8 @@ Measure: number of generated scenarios run, escapes found, escapes fixed.
 2. [x] One command install: `pipx install sentinel-runtime` (name free; release workflow
    ready, first tag pending), and a `sentinel doctor` command that checks bwrap, user
    namespaces, cgroup v2, and Git.
-3. [x] README rewrite: 60 second quickstart on Linux, a GIF, an eval results table at the top.
+3. README rewrite: [x] 60 second quickstart on Linux, [x] an eval results table at the top,
+   [ ] a GIF (removed for now).
 4. [x] Public leaderboard: a static page generated from `sentinel eval` results, published with
    GitHub Pages (`leaderboard.yml`; enable Pages with the "GitHub Actions" source).
 5. [x] Issue templates and a `CONTRIBUTING.md`; [ ] "good first issue" labels (create on GitHub).
