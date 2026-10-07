@@ -128,3 +128,28 @@ class VerificationHiddenTestRunner:
             timed_out=status == "TIMED_OUT", duration_seconds=time.monotonic() - started,
             boundary=verification.get("boundary") or "APPCONTAINER",
             output_tail=output[-OUTPUT_TAIL_BYTES:])
+
+
+class UnconfinedHiddenTestRunner:
+    """Hidden tests as a plain host child: only behind an explicit opt-in, labelled UNCONFINED.
+
+    For machines with no confined runner available to the chosen agent (for
+    example the mock agent on Windows, which has no Change to verify). Every
+    result it produces carries ``boundary = "UNCONFINED"``; it is never chosen
+    automatically.
+    """
+
+    def run(self, task: EvalTask, tree: Path, *, outcome: AgentOutcome) -> HiddenTestResult:
+        from backend.app.execution._process import capture, minimal_environment
+
+        argv = resolve_hidden_command(task.hidden_test_command) if os.name != "nt" else [
+            os.path.realpath(sys.executable) if part in ("python", "python3") else part
+            for part in task.hidden_test_command]
+        started = time.monotonic()
+        result = capture(argv, cwd=tree, env=minimal_environment(), timeout=task.timeout_seconds,
+                         limit=256 * 1024, max_timeout=task.timeout_seconds)
+        return HiddenTestResult(
+            passed=(not result.timed_out and result.returncode == 0),
+            exit_code=None if result.timed_out else result.returncode,
+            timed_out=result.timed_out, duration_seconds=time.monotonic() - started,
+            boundary="UNCONFINED", output_tail=_tail(result.stdout + result.stderr))

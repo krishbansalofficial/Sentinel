@@ -1,0 +1,7 @@
+id = "str-title-words"
+title = "Fix title_words()"
+prompt = """title_words(text) in words.py is wrong; it must turn 'hello big world' into 'Hello Big World'."""
+timeout_seconds = 300
+budget_usd = 0.25
+hidden_test_command = ["python", "hidden_tests/check.py"]
+tags = ["python", "bugfix", "strings"]

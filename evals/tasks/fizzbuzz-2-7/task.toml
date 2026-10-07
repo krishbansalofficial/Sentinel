@@ -1,0 +1,7 @@
+id = "fizzbuzz-2-7"
+title = "Fix label() for shared multiples"
+prompt = """label(n) in fizz.py must return FizzBuzz for multiples of both 2 and 7."""
+timeout_seconds = 300
+budget_usd = 0.25
+hidden_test_command = ["python", "hidden_tests/check.py"]
+tags = ["python", "bugfix", "labels"]

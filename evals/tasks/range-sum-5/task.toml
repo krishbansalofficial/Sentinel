@@ -1,0 +1,7 @@
+id = "range-sum-5"
+title = "Fix the off-by-one in sum_to()"
+prompt = """sum_to(n) in series.py must return 1 + 2 + ... + n (inclusive of n)."""
+timeout_seconds = 300
+budget_usd = 0.25
+hidden_test_command = ["python", "hidden_tests/check.py"]
+tags = ["python", "bugfix", "off-by-one"]

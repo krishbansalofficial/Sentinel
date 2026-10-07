@@ -1,0 +1,7 @@
+id = "str-shout"
+title = "Fix shout()"
+prompt = """shout(text) in words.py is wrong; it must turn 'hi' into 'HI!'."""
+timeout_seconds = 300
+budget_usd = 0.25
+hidden_test_command = ["python", "hidden_tests/check.py"]
+tags = ["python", "bugfix", "strings"]

@@ -1,0 +1,7 @@
+id = "op-multiply"
+title = "Fix multiply()"
+prompt = """multiply(a, b) in mathops.py must return a * b."""
+timeout_seconds = 300
+budget_usd = 0.25
+hidden_test_command = ["python", "hidden_tests/check.py"]
+tags = ["python", "bugfix", "operator"]

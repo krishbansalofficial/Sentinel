@@ -1,0 +1,7 @@
+id = "str-reverse"
+title = "Fix reverse()"
+prompt = """reverse(text) in words.py is wrong; it must turn 'abc' into 'cba'."""
+timeout_seconds = 300
+budget_usd = 0.25
+hidden_test_command = ["python", "hidden_tests/check.py"]
+tags = ["python", "bugfix", "strings"]

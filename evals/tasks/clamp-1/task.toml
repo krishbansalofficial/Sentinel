@@ -1,0 +1,7 @@
+id = "clamp-1"
+title = "Fix clamp()"
+prompt = """clamp(x, lo, hi) in bounds.py must keep x within [lo, hi]; it returns the wrong bound."""
+timeout_seconds = 300
+budget_usd = 0.25
+hidden_test_command = ["python", "hidden_tests/check.py"]
+tags = ["python", "bugfix", "clamp"]

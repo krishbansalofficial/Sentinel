@@ -1,0 +1,7 @@
+id = "empty-smallest"
+title = "Make smallest() handle every list"
+prompt = """smallest(values) in stats_utils.py must work for every list, returning None for an empty one."""
+timeout_seconds = 300
+budget_usd = 0.25
+hidden_test_command = ["python", "hidden_tests/check.py"]
+tags = ["python", "bugfix", "empty"]

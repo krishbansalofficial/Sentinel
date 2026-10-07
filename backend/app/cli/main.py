@@ -23,6 +23,7 @@ import typer
 from rich.console import Console
 
 from backend.app.cli.client import ApiClient, ApiConnectionError, ApiError
+from backend.app.cli.eval_commands import eval_app
 from backend.app.cli.github_commands import github_app_admin, github_check
 from backend.app.cli.passport_commands import (
     VerifyUsageCommand, export_passport_command, rotate_identity_command, trust_app,
@@ -82,6 +83,7 @@ app.add_typer(assurance_app, name="assurance")
 app.add_typer(events_app, name="events")
 app.add_typer(replay_app, name="replay")
 app.add_typer(tool_app, name="tool")
+app.add_typer(eval_app, name="eval")
 
 EXIT_OK = 0
 EXIT_API_ERROR = 1

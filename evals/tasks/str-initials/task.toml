@@ -1,0 +1,7 @@
+id = "str-initials"
+title = "Fix initials()"
+prompt = """initials(text) in words.py is wrong; it must turn 'ada lovelace' into 'AL'."""
+timeout_seconds = 300
+budget_usd = 0.25
+hidden_test_command = ["python", "hidden_tests/check.py"]
+tags = ["python", "bugfix", "strings"]
