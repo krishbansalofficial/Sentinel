@@ -14,6 +14,7 @@ from backend.app.tui.branch_screen import BranchScreen
 from backend.app.tui.contract_screen import ContractScreen
 from backend.app.tui.delegation_screen import DelegationScreen
 from backend.app.tui.detail_screen import DetailScreen
+from backend.app.tui.eval_screen import EvalScreen
 from backend.app.tui.evidence_screen import EvidenceScreen
 from backend.app.tui.outcome_screen import OutcomeScreen
 from backend.app.tui.passport_screen import PassportScreen
@@ -54,6 +55,7 @@ class ChangeDashboard(App):
         ("t", "timeline", "Timeline"),
         ("u", "tools", "Tools"),
         ("b", "branches", "Branches"),
+        ("e", "evals", "Evals"),
         ("q", "quit", "Quit"),
     ]
 
@@ -117,6 +119,10 @@ class ChangeDashboard(App):
                 item.get("review_state", ""),
                 item.get("repository_path", ""),
             )
+
+    def action_evals(self) -> None:
+        # Eval runs are global, not per Change: no selection is needed.
+        self.push_screen(EvalScreen(self.api_url))
 
     def action_recover(self) -> None:
         table = self.query_one(DataTable)

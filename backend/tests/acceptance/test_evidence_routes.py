@@ -328,7 +328,7 @@ def test_stale_evidence_blocks_local_verification_transition(tmp_path):
     assert "assurance_fresh" in blocked.text or "required_assurance_passed" in blocked.text
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="pause/resume uses Windows process suspension; the Linux cgroup freezer is Phase 1")
+@pytest.mark.skipif(sys.platform != "win32", reason="pausing an unconfined run uses Windows process suspension; Linux pauses only sandboxed runs (cgroup freezer, tests/execution/linux)")
 def test_pause_and_resume_a_running_agent_over_the_api(tmp_path):
     """Part A over the real HTTP API: pause a real running top-level agent
     process, prove its output stops growing while suspended, resume it, and

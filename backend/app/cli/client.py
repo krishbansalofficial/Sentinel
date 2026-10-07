@@ -489,6 +489,13 @@ class ApiClient:
     def list_eval_runs(self, *, limit: int = 100) -> Any:
         return self._request("GET", f"/api/v1/evals/runs?limit={int(limit)}")
 
+    def list_eval_attempts(self, run_id: UUID) -> Any:
+        return self._request("GET", f"/api/v1/evals/runs/{run_id}/attempts")
+
+    def compare_eval_runs(self, baseline_id: UUID, candidate_id: UUID) -> Any:
+        return self._request(
+            "GET", f"/api/v1/evals/compare?baseline={baseline_id}&candidate={candidate_id}")
+
     def list_tools(self) -> Any:
         return self._request("GET", "/api/v1/tools")
 

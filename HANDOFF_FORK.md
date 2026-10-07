@@ -96,3 +96,37 @@ Original user edits were already present in `e2e/reallife.spec.ts`,
 `src/features/checks/CheckRunsSection.tsx` and untracked `e2e/checks.spec.ts`.
 Preserve them. The repo remains dirty with this session's work; review the diff
 before making any commit. No subagents were used.
+
+## Direct master integration follow-up (2026-10-06 EDT)
+
+The owner requested merging everything directly onto `origin/master`, without a
+new branch. The completed local work was committed as `23861ca`. Fetched master
+was seven commits ahead (`a47d20a`); merged those existing commits while preserving
+both implementations. The remote adds Apache-2.0 LICENSE/NOTICE, sentinel-runtime
+package/release metadata, Eval attempts/bootstrap comparisons and TUI, leaderboard
+workflow and hidden-runner fixes. These files supersede earlier license/metadata
+pending notes; actual external publication is still not established here.
+
+Conflicts resolved in README, historical handoff and hidden-runner/evaluation
+code/tests. Retained bounded sandbox capture, reserved-path/link defenses,
+failed-workflow handling and existing delegated actors. Also retained the remote's
+thread-safe shared-runner preparation, timeout clamping, one-pass prompt rendering,
+empty-hidden-file detection fix and fresh delegated verifier fallback when the
+attempt has no actor. Requests without either an actor or usable API client refuse.
+
+Post-merge verification: **70 renderer and 108 Electron unit tests**, build/API
+consistency/typecheck, **six browser tests** including real delegated verification,
+and **14 packaged Electron smoke checks** passed. Backend integration initially
+returned 202 passes/two failures: the missing-client guard was corrected, and
+reinstalling the renamed project fixed stale environment metadata. Both cases and
+their entire affected modules then passed (**28 tests**); combined selected Windows
+coverage has **204 passing cases**. Linux integration returned **42 passes** after
+refreshing editable package metadata. Real Linux kernel checks returned
+**148 passes/five skips**: two resource controllers unavailable, two Go unavailable,
+and root permission behavior. This is a focused integration check, not a second
+full backend collection. Local logs are `.tmp/merge-*`.
+
+The merge is committed on the existing master branch and sent through a normal
+(non-force) push to origin/master. No upstream push, separate branch, tag or package
+release is part of this follow-up. Earlier no-commit/no-push statements describe
+the implementation phase before this explicit integration request.

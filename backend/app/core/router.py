@@ -18,6 +18,9 @@ from backend.app.assurance.service import (
 )
 from backend.app.contracts.models import (
     ActorActionRequest,
+    EvalAttemptListResponse,
+    EvalAttemptView,
+    EvalComparisonView,
     EvalRunListResponse,
     EvalRunUpload,
     EvalRunView,
@@ -1039,6 +1042,18 @@ def build_router(service: ChangeService, runtime: RuntimeServices) -> APIRouter:
     @router.get("/evals/runs/{run_id}", response_model=EvalRunView, tags=["evals"])
     def get_eval_run(run_id: UUID) -> EvalRunView:
         return EvalRunView.model_validate(runtime.evals.get(str(run_id)))
+
+    @router.get("/evals/runs/{run_id}/attempts", response_model=EvalAttemptListResponse,
+                tags=["evals"])
+    def list_eval_attempts(run_id: UUID) -> EvalAttemptListResponse:
+        items = [EvalAttemptView.model_validate(item)
+                 for item in runtime.evals.attempts(str(run_id))]
+        return EvalAttemptListResponse(items=items, count=len(items))
+
+    @router.get("/evals/compare", response_model=EvalComparisonView, tags=["evals"])
+    def compare_eval_runs(baseline: UUID, candidate: UUID) -> EvalComparisonView:
+        return EvalComparisonView.model_validate(
+            runtime.evals.compare(str(baseline), str(candidate)))
 
     @router.get(
         "/tools",

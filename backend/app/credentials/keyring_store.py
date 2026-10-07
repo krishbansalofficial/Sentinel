@@ -2,7 +2,7 @@
 
 macOS: the login Keychain. Linux: the Secret Service (GNOME Keyring, KWallet).
 `keyring` is a dependency on macOS and an optional extra elsewhere
-(``pip install "change-assurance[keyring]"``).
+(``pip install "sentinel-runtime[keyring]"``).
 
 Construction fails closed: if `keyring` is not installed, or its active backend
 is one that does not actually keep secrets (``fail.Keyring``, ``null.Keyring``,

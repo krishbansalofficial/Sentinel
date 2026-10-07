@@ -480,6 +480,19 @@ class LinuxSandboxProcess:
         self.returncode = code
         return code
 
+    def communicate_with_timeout(self, timeout: float, *,
+                                 grace: float = 10.0) -> tuple[bytes, bytes, bool]:
+        """Collect output until exit; past ``timeout`` kill the tree. (stdout, stderr, timed_out)."""
+        try:
+            stdout, stderr = self._popen.communicate(timeout=timeout)
+            timed_out = False
+        except subprocess.TimeoutExpired:
+            self.kill()
+            stdout, stderr = self._popen.communicate(timeout=grace)
+            timed_out = True
+        self.returncode = self._popen.returncode
+        return stdout or b"", stderr or b"", timed_out
+
     def kill(self) -> None:
         self.session.terminate()
         if self._popen.poll() is None:
@@ -540,8 +553,12 @@ def spawn_linux_sandbox(spec: SandboxSpec, cgroup: RunCgroup, *, redact: Callabl
                         environ: Mapping[str, str] | None = None,
                         verify_timeout: float = VERIFY_TIMEOUT_SECONDS) -> LinuxSandboxProcess:
     """Start ``spec`` blocked, verify the live boundary, then release it; else fail closed."""
-    bwrap, disable_userns = require_sandbox(environ)
-    seccomp_fd = _seccomp_fd()
+    try:
+        bwrap, disable_userns = require_sandbox(environ)
+        seccomp_fd = _seccomp_fd()
+    except BaseException:
+        cgroup.remove()  # the caller handed over a fresh run cgroup; never leak it
+        raise
     info_read, info_write = os.pipe()
     block_read, block_write = os.pipe()
     popen: subprocess.Popen | None = None

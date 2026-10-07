@@ -7,11 +7,13 @@ from pathlib import Path
 import tomllib
 
 SOURCE_VERSION_FALLBACK = "0+source"
+# The distribution name on PyPI; on-disk names (the store, the database) keep change_assurance.
+DISTRIBUTION = "sentinel-runtime"
 
 
 def product_version() -> str:
     try:
-        return version("change-assurance")
+        return version(DISTRIBUTION)
     except PackageNotFoundError:
         source = Path(__file__).resolve().parents[3] / "pyproject.toml"
         try:

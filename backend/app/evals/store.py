@@ -18,7 +18,7 @@ from backend.app.contracts.models import JournalEventType
 from backend.app.core.database import Database
 from backend.app.core.errors import AppError
 from backend.app.core.journal import JournalWriter
-from backend.app.evals.report import SCHEMA, summarize
+from backend.app.evals.report import SCHEMA, compare, summarize
 
 MAX_RESULTS = 20_000
 
@@ -90,6 +90,47 @@ class EvalStore:
             raise eval_run_not_found(run_id)
         return self._view(row)
 
+    def document(self, run_id: str) -> dict[str, Any]:
+        """The run rebuilt as a ``sentinel-eval-run/1`` document from its stored attempts."""
+        with self._database.connection() as connection:
+            row = connection.execute(
+                "SELECT id, suite, config_json, k, started_at, completed_at FROM eval_runs "
+                "WHERE id = ?", (run_id,)).fetchone()
+            if row is None:
+                raise eval_run_not_found(run_id)
+            results = [json.loads(item[0]) for item in connection.execute(
+                "SELECT payload_json FROM eval_results WHERE run_id = ? "
+                "ORDER BY task_id, attempt", (run_id,)).fetchall()]
+        return {"schema": SCHEMA, "id": row[0], "suite": row[1], "config": json.loads(row[2]),
+                "k": row[3], "started_at": row[4], "completed_at": row[5], "results": results}
+
+    def attempts(self, run_id: str) -> list[dict[str, Any]]:
+        """Every attempt of a run, flattened for display (UNKNOWN stays None)."""
+        return [_attempt_view(result) for result in self.document(run_id)["results"]]
+
+    def compare(self, baseline_id: str, candidate_id: str) -> dict[str, Any]:
+        """``sentinel eval compare`` over two recorded runs: deltas, bootstrap, verdict."""
+        comparison = compare(self.document(baseline_id), self.document(candidate_id))
+        rates_a = {task.task_id: task.rate for task in comparison.a.tasks}
+        rates_b = {task.task_id: task.rate for task in comparison.b.tasks}
+        boot = comparison.bootstrap
+        return {
+            "baseline_id": baseline_id, "candidate_id": candidate_id,
+            "overall_delta": comparison.b.rate - comparison.a.rate,
+            "regression": comparison.regression,
+            "intervals_separate": (comparison.b.high < comparison.a.low
+                                   or comparison.b.low > comparison.a.high),
+            "bootstrap": None if boot is None else {
+                "mean_difference": boot.mean_difference, "low": boot.interval.low,
+                "high": boot.interval.high, "resamples": boot.resamples, "tasks": boot.tasks},
+            "tasks": [{"task_id": task, "rate_a": rates_a[task], "rate_b": rates_b[task],
+                       "delta": delta,
+                       "flip": ("regressed" if task in comparison.regressed else
+                                "improved" if task in comparison.improved else None)}
+                      for task, delta in sorted(comparison.task_deltas.items())],
+            "only_in_a": comparison.only_in_a, "only_in_b": comparison.only_in_b,
+        }
+
     @staticmethod
     def _view(row) -> dict[str, Any]:
         summary = json.loads(row[6])
@@ -110,3 +151,20 @@ class EvalStore:
                        "rate": task["rate"], "low": task["low"], "high": task["high"]}
                       for task in summary["tasks"]],
         }
+
+
+def _attempt_view(result: dict[str, Any]) -> dict[str, Any]:
+    agent = result.get("agent") or {}
+    hidden = result.get("hidden") or {}
+    return {
+        "task_id": str(result["task_id"]), "attempt": int(result["attempt"]),
+        "status": str(result["status"]),
+        "hidden_tests_absent": result.get("hidden_tests_absent"),
+        "wall_seconds": result.get("wall_seconds"), "error": result.get("error"),
+        "agent_status": agent.get("status"), "cost_usd": agent.get("cost_usd"),
+        "input_tokens": agent.get("input_tokens"), "output_tokens": agent.get("output_tokens"),
+        "change_id": agent.get("change_id"), "passport_id": agent.get("passport_id"),
+        "hidden_boundary": hidden.get("boundary"), "hidden_exit_code": hidden.get("exit_code"),
+        "hidden_timed_out": hidden.get("timed_out"),
+        "hidden_output_tail": hidden.get("output_tail"),
+    }

@@ -156,7 +156,14 @@ test("stop escalates when the child ignores the polite signal", async () => {
     if (signal === "SIGKILL") setImmediate(() => child.emit("exit", null, "SIGKILL"));
     return true;
   };
-  await runtime.stop();
+  // A real child's process handle keeps the event loop alive while stop() waits on its
+  // unref()ed escalation timer; this fake has none, so hold the loop open meanwhile.
+  const alive = setInterval(() => {}, 1 << 30);
+  try {
+    await runtime.stop();
+  } finally {
+    clearInterval(alive);
+  }
   assert.deepEqual(child.killed, ["SIGTERM", "SIGKILL"]);
 });
 

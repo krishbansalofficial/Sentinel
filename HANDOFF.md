@@ -59,9 +59,72 @@ remain external release steps. No upstream/team implementation approval applies.
 | 3. Queue and crash recovery | **Done**: queue, pool, fencing, SIGKILL + chaos tests, bench, `eval run --workers/--queue/--resume` | `997406e`, `5ad8598` |
 | 4. Observability | **Done**: optional OTLP spans (`[telemetry]` extra), connected Jaeger trace, `/api/v1/metrics` (hardened: counts only Sentinel's own refusal lines), desktop Eval page with run comparison | `75962e0`, `b00ad7b`, `a934b9f`, `4c6a6e4` |
 | 5. Adversarial fuzzer | **Linux done** (40 scenarios, 153 behaviors, 0 escapes); Windows seeded AppContainer fuzzer passes 12 scenarios / 48 behavior attempts, 0 observed escapes | `bench/fuzz/`, `9cc2d40`, `42aea0a`; Windows child-spawn attempts were refused on this host |
-| 6. Release and users | **Partial**: doctor, contribution docs/templates, README quickstart + honest mock eval table, static leaderboard CLI + preview. Remaining: agreed license, package registration, real Claude results, GIF, Pages publication, launch | `bench/release/`; PyPI metadata check returned 404, no name reservation |
+| 6. Release and users | **Mostly done**: Apache-2.0 license, `sentinel-runtime` package with a tag-triggered PyPI release workflow (trusted publishing), doctor, contribution docs/templates, README quickstart + honest mock eval table, leaderboard Pages workflow. Remaining: README GIF; (need kb) PyPI trusted-publisher setup and first `v0.1.0` tag, enabling Pages, real Claude results, launch | `bench/release/`, `.github/workflows/{release,leaderboard}.yml` |
 
 Verification for `b00ad7b`..`42aea0a` (2026-10-09): Windows targeted suites (core, evals, policy, launcher, contract, AppContainer fuzz) green after the fixes in those commits; Linux full suite 2024 passed with the only failures being the README count and CI pin tests fixed in `42aea0a`/`b00ad7b` and telemetry tests needing the `[telemetry]` extra (86/86 green with it); desktop typecheck, api:check and 65 unit tests green. Docker is only the Windows dev box's way to reach a Linux kernel for tests; Sentinel never uses Docker at runtime.
+
+### License, package and release (2026-10-06)
+Decision (kb, 2026-10-06): no third-party permission is needed (the hackathon project is
+continued independently). The project is **Apache-2.0** (`LICENSE`, `NOTICE`,
+`pyproject.toml` `license`/`license-files`, README and CONTRIBUTING sections).
+* Package: the distribution is now **`sentinel-runtime`** (free on PyPI when checked
+  2026-10-06). Only the distribution name changed: the store directory, database filename,
+  environment fingerprint key, backend service name and recovery branch prefix keep their
+  `change-assurance`/`change_assurance` names, so existing stores and Passports still work.
+  The wheel excludes `backend/tests` (524 KB). `twine check --strict` passes; a clean install
+  from the wheel runs `sentinel --version`, `sentinel doctor` and the mock eval smoke.
+* Release: `.github/workflows/release.yml` builds, checks, smoke-tests and publishes on a
+  `v*` tag via PyPI trusted publishing (no token). To ship: on pypi.org add a pending trusted
+  publisher (project `sentinel-runtime`, owner `krishbansalofficial`, repo `Sentinel`,
+  workflow `release.yml`, environment `pypi`), then push tag `v0.1.0`.
+* Existing local checkouts: after pulling, run `pip install -e ".[test,tui,keyring,telemetry]"`
+  again so the new distribution name is registered (uninstall `change-assurance` first, then
+  reinstall, because both own the `sentinel` script).
+
+### Eval comparison everywhere, TUI Eval screen, leaderboard publication (2026-10-06)
+* API (additive): `GET /api/v1/evals/runs/{id}/attempts` (per-attempt results, unknown
+  fields null) and `GET /api/v1/evals/compare?baseline=&candidate=` (the CLI's comparison:
+  per-task deltas, flips, paired bootstrap, regression verdict) over stored attempts.
+  `openapi.json` and the desktop client regenerated.
+* Desktop Eval page: the compare panel shows the backend's bootstrap verdict (no longer
+  "use the CLI"); each run has an on-demand Attempts table. Unit and Playwright tests added.
+* TUI: `e` on the dashboard opens an Eval screen (runs, intervals, latest-vs-previous
+  verdict with flipped tasks), tested against a live server.
+* Phase 6.4: `.github/workflows/leaderboard.yml` publishes the static leaderboard and
+  per-run reports from committed results to GitHub Pages; a test runs the same build.
+  Enable Pages ("GitHub Actions" source) in the repository settings before the first run.
+  The Pages actions are tag-pinned (`@v3`/`@v4`); pin them to SHAs like `ci.yml` if wanted.
+* Still open (needs a person or a host): a real `--agent claude` run, the first PyPI
+  release, Windows CI confirmation, Windows fuzz follow-ups and launch. `/metrics`
+  has no queue depth because the eval queue lives beside the results file, not in the backend.
+
+### Eval audit and mock backtest (2026-10-06)
+Bugs found and fixed (each has a regression test that fails on the old code):
+* `SandboxHiddenTestRunner` read the wrapper's `returncode`, which `communicate()` on the
+  inner Popen never sets: every confined Linux hidden test scored FAILED (0% pass rate).
+  Confirmed on a real kernel. `LinuxSandboxProcess.communicate_with_timeout` now owns the
+  wait, timeout kill and return code; only `TimeoutExpired` counts as a timeout.
+* `VerificationHiddenTestRunner` (Windows) posted a flat body to `/verify`, which takes
+  `VerificationActionRequest` (an actor plus nested verification): every Windows confined
+  hidden test would 422. It now creates an actor with a `change.legacy_verify` delegation
+  and clamps the timeout to the contract's 300 s.
+* The hidden-test cgroup hierarchy was lazily prepared without a lock (races with
+  `--workers`); `spawn_linux_sandbox` leaked the run cgroup when bwrap was missing;
+  `hidden_tests_absent` matched empty hidden files (`__init__.py`) against any empty fixture
+  file; prompt templates substituted `{title}` inside the substituted prompt.
+* Desktop Electron tests: 12 of 104 were cancelled on Node 22 (fakes held no handle while
+  unref()ed timers were awaited); fixed in the tests. Now 104/104.
+* Tests: a positive control depended on the runner's global `gpg.format`; seccomp
+  "native architecture" skips were impossible parametrizations; stale skip reasons.
+* Added Linux confined Go tests (`execution/linux/test_linux_confined_go.py`) and real-kernel
+  hidden-runner tests (`execution/linux/test_hidden_sandbox.py`).
+* Backtest: `bench/regression_detection/` (360 confined attempts, 3/3 correct verdicts;
+  false-positive rate 3.5% over 200 same-config trials).
+
+Verification (Linux 6.18 container, Python 3.13): full suite as root and as a non-root user
+(see the commit for counts); real-kernel suite 205 passed, 2 skipped (pids/memory controllers
+unavailable on this hybrid-cgroup host); desktop api:check, typecheck, 69 unit and 104
+Electron tests. Remaining skips are Windows-only, macOS-only or the opt-in live Claude test.
 
 ### Linux confined check boxes: implemented
 The Linux platform in `execution/linux_check_box.py` supplies the existing `BoxPlatform`
@@ -170,7 +233,7 @@ not available in containers (do not change `.wslconfig`: it restarts WSL and Doc
    authenticated Claude eval with tracing. Local acceptance includes a connected mock trace
    in Jaeger, desktop build/tests and three Eval browser tests. Spans cover launch, boundary
    verification, checks and eval jobs; W3C context crosses the CLI/API and worker threads.
-1. **Phase 2 leftovers**: tests for `SandboxHiddenTestRunner` (Linux) and `VerificationHiddenTestRunner` (Windows);
+1. **Phase 2 leftovers**: (done: tests for `SandboxHiddenTestRunner` and `VerificationHiddenTestRunner`);
    a first real `--agent claude` run (needs a Claude login) to fill the eval results table.
    Ubuntu 24.04 hosts need `packaging/apparmor/sentinel-bwrap` (read its trade-off note).
 2. **Done: Linux confined check boxes** (Phase 1 item 6): verified Linux platform,
@@ -178,8 +241,9 @@ not available in containers (do not change `.wslconfig`: it restarts WSL and Doc
    verification and controller limitations are recorded above.
 3. **Phase 5/6 follow-up**: extend Windows scenarios to race junctions and exercise successfully
    spawned hostile descendants on a suitable host; review `bench/fuzz/windows-results.xml`.
-   Review `bench/release/leaderboard-smoke.html`; obtain license agreement, select the package
-   name, collect real agent results/GIF, then publish and launch. No public release was made.
+   License (Apache-2.0), package name (`sentinel-runtime`) and release workflow are done;
+   remaining: PyPI trusted-publisher setup and the first tag, enabling Pages, real agent
+   results, a README GIF, then launch. No public release was made.
 
 Implementation verification (2026-10-04): 87 existing eval/contract tests passed; 51 targeted
 telemetry/hidden-runner/leaderboard/dependency/Windows boundary tests passed; 12 Windows fuzz
@@ -429,7 +493,8 @@ Node repos) with hidden tests. Optionally import a SWE bench Lite subset later.
 Acceptance:
 - [ ] `sentinel eval run --suite evals/tasks --agent claude --k 3` produces a results report
       (JSON plus a static HTML page).
-- [ ] Hidden tests are provably absent from the agent's workspace (test asserts it).
+- [x] Hidden tests are provably absent from the agent's workspace (test asserts it).
+      (`evals/test_runner.py`, real-kernel `execution/linux/test_hidden_sandbox.py`.)
 - [x] `compare` detects an injected regression (a deliberately broken prompt) and does not
       flag two runs of the same config. (Mock agent, `test_seed_suite_and_cli.py`; exit 3.)
 - [x] Unit tests for the Wilson interval and bootstrap against known values.
@@ -448,9 +513,11 @@ infrastructure.
 4. Per job budgets: timeout, max cost, max descendant processes.
 
 Acceptance:
-- [ ] Kill the backend with `SIGKILL` mid run; on restart every job finishes exactly once and
-      no orphan processes or cgroups remain.
-- [ ] A chaos test kills random workers during a 100 job run and the final report is complete.
+- [x] Kill the backend with `SIGKILL` mid run; on restart every job finishes exactly once and
+      no orphan processes or cgroups remain. (`evals/test_queue.py::
+      test_sigkill_mid_run_then_restart_finishes_every_job_once`.)
+- [x] A chaos test kills random workers during a 100 job run and the final report is complete.
+      (`evals/test_queue.py::test_chaos_random_worker_kills_during_a_100_job_run`.)
 
 Measure in `bench/concurrency/`: throughput (jobs per hour) and queue delay at concurrency 1,
 4, 8, 16 on stated hardware; recovery time after a kill.
@@ -481,14 +548,15 @@ Measure: number of generated scenarios run, escapes found, escapes fixed.
 
 ### Phase 6: Release and users (ongoing, start after Phase 2)
 
-1. **License.** Required before calling it open source. This fork is independently maintained. Record a license only where the owner
-   has the necessary rights; preserve upstream and third-party notices.
-2. One command install: `pipx install sentinel-runtime` (check the PyPI name), and a
-   `sentinel doctor` command that checks bwrap, user namespaces, cgroup v2, and Git.
-3. README rewrite: 60 second quickstart on Linux, a GIF, an eval results table at the top.
-4. Public leaderboard: a static page generated from `sentinel eval` results, published with
-   GitHub Pages.
-5. Issue templates, a `CONTRIBUTING.md`, and "good first issue" labels.
+1. [x] **License.** Apache 2.0 (decided 2026-10-06; no third-party agreement needed).
+2. [x] One command install: `pipx install sentinel-runtime` (name free; release workflow
+   ready, first tag pending), and a `sentinel doctor` command that checks bwrap, user
+   namespaces, cgroup v2, and Git.
+3. README rewrite: [x] 60 second quickstart on Linux, [x] an eval results table at the top,
+   [ ] a GIF (removed for now).
+4. [x] Public leaderboard: a static page generated from `sentinel eval` results, published with
+   GitHub Pages (`leaderboard.yml`; enable Pages with the "GitHub Actions" source).
+5. [x] Issue templates and a `CONTRIBUTING.md`; [ ] "good first issue" labels (create on GitHub).
 6. Launch: Show HN, r/LocalLLaMA, r/ClaudeAI, agent tooling Discords, and a short write up of
    one interesting finding from the eval data.
 
@@ -513,9 +581,9 @@ Track in `bench/adoption.md`: stars, installs (PyPI downloads), external issues,
 
 1. D-03: how Linux boundary profiles are declared (Phase 1, item 1).
 2. Where `LINUX_SANDBOX` ranks in the Passport weakest boundary ordering.
-3. License and preservation of upstream attribution.
-4. Whether to upstream this work to `csshlok/Sentinel` or keep it in the fork. Keep your own
-   commits clearly attributable either way, since this phase is your individual contribution.
+3. ~~License~~: decided, Apache 2.0 (2026-10-06).
+4. ~~Upstream or fork~~: decided, development continues independently in this repository
+   (2026-10-06).
 
 ## 8. Definition of done for this handoff
 
@@ -568,3 +636,37 @@ Final summaries: `bench/release/verification.json`; detailed security findings:
 `bench/release/python-audit.json`. The final application window is Sentinel and
 its bundled backend health returned 200. No credentials or API tokens were
 included in the saved reports.
+
+## Direct master integration follow-up (2026-10-06 EDT)
+
+The owner requested merging everything directly onto `origin/master`, without a
+new branch. The completed local work was committed as `23861ca`. Fetched master
+was seven commits ahead (`a47d20a`); merged those existing commits while preserving
+both implementations. The remote adds Apache-2.0 LICENSE/NOTICE, sentinel-runtime
+package/release metadata, Eval attempts/bootstrap comparisons and TUI, leaderboard
+workflow and hidden-runner fixes. These files supersede earlier license/metadata
+pending notes; actual external publication is still not established here.
+
+Conflicts resolved in README, historical handoff and hidden-runner/evaluation
+code/tests. Retained bounded sandbox capture, reserved-path/link defenses,
+failed-workflow handling and existing delegated actors. Also retained the remote's
+thread-safe shared-runner preparation, timeout clamping, one-pass prompt rendering,
+empty-hidden-file detection fix and fresh delegated verifier fallback when the
+attempt has no actor. Requests without either an actor or usable API client refuse.
+
+Post-merge verification: **70 renderer and 108 Electron unit tests**, build/API
+consistency/typecheck, **six browser tests** including real delegated verification,
+and **14 packaged Electron smoke checks** passed. Backend integration initially
+returned 202 passes/two failures: the missing-client guard was corrected, and
+reinstalling the renamed project fixed stale environment metadata. Both cases and
+their entire affected modules then passed (**28 tests**); combined selected Windows
+coverage has **204 passing cases**. Linux integration returned **42 passes** after
+refreshing editable package metadata. Real Linux kernel checks returned
+**148 passes/five skips**: two resource controllers unavailable, two Go unavailable,
+and root permission behavior. This is a focused integration check, not a second
+full backend collection. Local logs are `.tmp/merge-*`.
+
+The merge is committed on the existing master branch and sent through a normal
+(non-force) push to origin/master. No upstream push, separate branch, tag or package
+release is part of this follow-up. Earlier no-commit/no-push statements describe
+the implementation phase before this explicit integration request.

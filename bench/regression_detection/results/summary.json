@@ -1,0 +1,168 @@
+{
+  "generated_at": "2026-10-06T16:53:50.566819+00:00",
+  "command": "python bench/regression_detection/run.py --confined --no-controllers --out bench/regression_detection/results --trials 200",
+  "environment": {
+    "python": "3.13.16",
+    "platform": "Linux-6.18.44-fc-v70-x86_64-with-glibc2.39",
+    "cpus": 4
+  },
+  "part_a": {
+    "tasks": 30,
+    "k": 3,
+    "confined": true,
+    "runs": {
+      "baseline-a": {
+        "passes": 77,
+        "attempts": 90,
+        "errors": 0,
+        "rate": 0.8556,
+        "wilson_95": [
+          0.7684,
+          0.9136
+        ],
+        "hidden_boundaries": {
+          "LINUX_SANDBOX": 90
+        },
+        "wall_p50_seconds": 0.1776163260000203,
+        "seconds": 16.7
+      },
+      "baseline-b": {
+        "passes": 75,
+        "attempts": 90,
+        "errors": 0,
+        "rate": 0.8333,
+        "wilson_95": [
+          0.7431,
+          0.8963
+        ],
+        "hidden_boundaries": {
+          "LINUX_SANDBOX": 90
+        },
+        "wall_p50_seconds": 0.1787270929999636,
+        "seconds": 16.22
+      },
+      "degraded": {
+        "passes": 47,
+        "attempts": 90,
+        "errors": 0,
+        "rate": 0.5222,
+        "wilson_95": [
+          0.4202,
+          0.6224
+        ],
+        "hidden_boundaries": {
+          "LINUX_SANDBOX": 90
+        },
+        "wall_p50_seconds": 0.18463982399993029,
+        "seconds": 16.72
+      },
+      "broken-prompt": {
+        "passes": 0,
+        "attempts": 90,
+        "errors": 0,
+        "rate": 0.0,
+        "wilson_95": [
+          0.0,
+          0.0409
+        ],
+        "hidden_boundaries": {
+          "LINUX_SANDBOX": 90
+        },
+        "wall_p50_seconds": 0.20245536550004317,
+        "seconds": 18.22
+      }
+    },
+    "comparisons": [
+      {
+        "a": "baseline-a",
+        "b": "baseline-b",
+        "expected_regression": false,
+        "flagged": false,
+        "correct": true,
+        "overall_delta": -0.0222,
+        "bootstrap_mean": -0.0222,
+        "bootstrap_95": [
+          -0.1444,
+          0.0889
+        ],
+        "regressed_tasks": 3,
+        "improved_tasks": 1
+      },
+      {
+        "a": "baseline-a",
+        "b": "degraded",
+        "expected_regression": true,
+        "flagged": true,
+        "correct": true,
+        "overall_delta": -0.3333,
+        "bootstrap_mean": -0.3333,
+        "bootstrap_95": [
+          -0.4556,
+          -0.2111
+        ],
+        "regressed_tasks": 14,
+        "improved_tasks": 1
+      },
+      {
+        "a": "baseline-a",
+        "b": "broken-prompt",
+        "expected_regression": true,
+        "flagged": true,
+        "correct": true,
+        "overall_delta": -0.8556,
+        "bootstrap_mean": -0.8556,
+        "bootstrap_95": [
+          -0.9222,
+          -0.7889
+        ],
+        "regressed_tasks": 29,
+        "improved_tasks": 0
+      }
+    ]
+  },
+  "part_b": [
+    {
+      "base_rate": 0.85,
+      "drop": 0.0,
+      "trials": 200,
+      "flagged": 7,
+      "flag_rate": 0.035
+    },
+    {
+      "base_rate": 0.85,
+      "drop": 0.05,
+      "trials": 200,
+      "flagged": 33,
+      "flag_rate": 0.165
+    },
+    {
+      "base_rate": 0.85,
+      "drop": 0.1,
+      "trials": 200,
+      "flagged": 77,
+      "flag_rate": 0.385
+    },
+    {
+      "base_rate": 0.85,
+      "drop": 0.15,
+      "trials": 200,
+      "flagged": 136,
+      "flag_rate": 0.68
+    },
+    {
+      "base_rate": 0.85,
+      "drop": 0.2,
+      "trials": 200,
+      "flagged": 175,
+      "flag_rate": 0.875
+    },
+    {
+      "base_rate": 0.85,
+      "drop": 0.3,
+      "trials": 200,
+      "flagged": 198,
+      "flag_rate": 0.99
+    }
+  ],
+  "seconds": 96.3
+}

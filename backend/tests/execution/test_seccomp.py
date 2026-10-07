@@ -82,11 +82,11 @@ def test_clone3_returns_enosys_so_libc_falls_back(arch: str) -> None:
                       nr=SYSCALLS[arch]["clone3"]) == ENOSYS
 
 
-@pytest.mark.parametrize("arch", ARCHES)
-@pytest.mark.parametrize("foreign", [0x40000003, 0xC000003E, 0xC00000B7, 0])  # i386, x86_64, aarch64, junk
+@pytest.mark.parametrize(("arch", "foreign"), [
+    (arch, foreign) for arch in ARCHES
+    for foreign in (0x40000003, 0xC000003E, 0xC00000B7, 0)  # i386, x86_64, aarch64, junk
+    if foreign != AUDIT_ARCH[arch]])  # an architecture is never foreign to itself
 def test_a_foreign_architecture_is_refused_for_every_syscall(arch: str, foreign: int) -> None:
-    if foreign == AUDIT_ARCH[arch]:
-        pytest.skip("native architecture")
     program = build_filter(arch)
     for number in (0, 1, 59, 101, 165):
         assert run_filter(program, arch=foreign, nr=number) == EPERM

@@ -1082,6 +1082,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evals/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compare Eval Runs */
+        get: operations["compare_eval_runs_api_v1_evals_compare_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evals/runs": {
         parameters: {
             query?: never;
@@ -1109,6 +1126,23 @@ export interface paths {
         };
         /** Get Eval Run */
         get: operations["get_eval_run_api_v1_evals_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/runs/{run_id}/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Eval Attempts */
+        get: operations["list_eval_attempts_api_v1_evals_runs__run_id__attempts_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2814,6 +2848,96 @@ export interface components {
             drift?: components["schemas"]["EnvironmentDrift"] | null;
             passport?: components["schemas"]["EnvironmentPassport"] | null;
         };
+        /** EvalAttemptListResponse */
+        EvalAttemptListResponse: {
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["EvalAttemptView"][];
+        };
+        /**
+         * EvalAttemptView
+         * @description One attempt of a recorded eval run; fields the attempt did not report stay null.
+         */
+        EvalAttemptView: {
+            /** Agent Status */
+            agent_status?: string | null;
+            /** Attempt */
+            attempt: number;
+            /** Change Id */
+            change_id?: string | null;
+            /** Cost Usd */
+            cost_usd?: number | null;
+            /** Error */
+            error?: string | null;
+            /** Hidden Boundary */
+            hidden_boundary?: string | null;
+            /** Hidden Exit Code */
+            hidden_exit_code?: number | null;
+            /** Hidden Output Tail */
+            hidden_output_tail?: string | null;
+            /** Hidden Tests Absent */
+            hidden_tests_absent?: boolean | null;
+            /** Hidden Timed Out */
+            hidden_timed_out?: boolean | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Passport Id */
+            passport_id?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "PASSED" | "FAILED" | "ERROR";
+            /** Task Id */
+            task_id: string;
+            /** Wall Seconds */
+            wall_seconds?: number | null;
+        };
+        /** EvalBootstrapView */
+        EvalBootstrapView: {
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Mean Difference */
+            mean_difference: number;
+            /** Resamples */
+            resamples: number;
+            /** Tasks */
+            tasks: number;
+        };
+        /**
+         * EvalComparisonView
+         * @description ``sentinel eval compare`` over two recorded runs (B is the candidate).
+         */
+        EvalComparisonView: {
+            /**
+             * Baseline Id
+             * Format: uuid
+             */
+            baseline_id: string;
+            bootstrap?: components["schemas"]["EvalBootstrapView"] | null;
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /** Intervals Separate */
+            intervals_separate: boolean;
+            /** Only In A */
+            only_in_a?: string[];
+            /** Only In B */
+            only_in_b?: string[];
+            /** Overall Delta */
+            overall_delta: number;
+            /** Regression */
+            regression: boolean;
+            /** Tasks */
+            tasks?: components["schemas"]["EvalTaskDelta"][];
+        };
         /** EvalRunListResponse */
         EvalRunListResponse: {
             /** Count */
@@ -2903,6 +3027,19 @@ export interface components {
             wall_p50_seconds?: number | null;
             /** Wall P95 Seconds */
             wall_p95_seconds?: number | null;
+        };
+        /** EvalTaskDelta */
+        EvalTaskDelta: {
+            /** Delta */
+            delta: number;
+            /** Flip */
+            flip?: ("regressed" | "improved") | null;
+            /** Rate A */
+            rate_a: number;
+            /** Rate B */
+            rate_b: number;
+            /** Task Id */
+            task_id: string;
         };
         /** EvalTaskView */
         EvalTaskView: {
@@ -6598,6 +6735,40 @@ export interface operations {
             };
         };
     };
+    compare_eval_runs_api_v1_evals_compare_get: {
+        parameters: {
+            query: {
+                baseline: string;
+                candidate: string;
+            };
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalComparisonView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_eval_runs_api_v1_evals_runs_get: {
         parameters: {
             query?: {
@@ -6686,6 +6857,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalRunView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_eval_attempts_api_v1_evals_runs__run_id__attempts_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalAttemptListResponse"];
                 };
             };
             /** @description Validation Error */

@@ -3518,6 +3518,310 @@
         "title": "EnvironmentView",
         "type": "object"
       },
+      "EvalAttemptListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvalAttemptView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "EvalAttemptListResponse",
+        "type": "object"
+      },
+      "EvalAttemptView": {
+        "additionalProperties": false,
+        "description": "One attempt of a recorded eval run; fields the attempt did not report stay null.",
+        "properties": {
+          "agent_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Status"
+          },
+          "attempt": {
+            "minimum": 1.0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "change_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Id"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "hidden_boundary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden Boundary"
+          },
+          "hidden_exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden Exit Code"
+          },
+          "hidden_output_tail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden Output Tail"
+          },
+          "hidden_tests_absent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden Tests Absent"
+          },
+          "hidden_timed_out": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden Timed Out"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "passport_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Id"
+          },
+          "status": {
+            "enum": [
+              "PASSED",
+              "FAILED",
+              "ERROR"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Task Id",
+            "type": "string"
+          },
+          "wall_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wall Seconds"
+          }
+        },
+        "required": [
+          "task_id",
+          "attempt",
+          "status"
+        ],
+        "title": "EvalAttemptView",
+        "type": "object"
+      },
+      "EvalBootstrapView": {
+        "additionalProperties": false,
+        "properties": {
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "title": "Low",
+            "type": "number"
+          },
+          "mean_difference": {
+            "title": "Mean Difference",
+            "type": "number"
+          },
+          "resamples": {
+            "title": "Resamples",
+            "type": "integer"
+          },
+          "tasks": {
+            "title": "Tasks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mean_difference",
+          "low",
+          "high",
+          "resamples",
+          "tasks"
+        ],
+        "title": "EvalBootstrapView",
+        "type": "object"
+      },
+      "EvalComparisonView": {
+        "additionalProperties": false,
+        "description": "``sentinel eval compare`` over two recorded runs (B is the candidate).",
+        "properties": {
+          "baseline_id": {
+            "format": "uuid",
+            "title": "Baseline Id",
+            "type": "string"
+          },
+          "bootstrap": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvalBootstrapView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidate_id": {
+            "format": "uuid",
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "intervals_separate": {
+            "title": "Intervals Separate",
+            "type": "boolean"
+          },
+          "only_in_a": {
+            "items": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Only In A",
+            "type": "array"
+          },
+          "only_in_b": {
+            "items": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Only In B",
+            "type": "array"
+          },
+          "overall_delta": {
+            "title": "Overall Delta",
+            "type": "number"
+          },
+          "regression": {
+            "title": "Regression",
+            "type": "boolean"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/EvalTaskDelta"
+            },
+            "title": "Tasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "baseline_id",
+          "candidate_id",
+          "overall_delta",
+          "regression",
+          "intervals_separate"
+        ],
+        "title": "EvalComparisonView",
+        "type": "object"
+      },
       "EvalRunListResponse": {
         "additionalProperties": false,
         "properties": {
@@ -3759,6 +4063,52 @@
           "cost_unknown"
         ],
         "title": "EvalRunView",
+        "type": "object"
+      },
+      "EvalTaskDelta": {
+        "additionalProperties": false,
+        "properties": {
+          "delta": {
+            "title": "Delta",
+            "type": "number"
+          },
+          "flip": {
+            "anyOf": [
+              {
+                "enum": [
+                  "regressed",
+                  "improved"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flip"
+          },
+          "rate_a": {
+            "title": "Rate A",
+            "type": "number"
+          },
+          "rate_b": {
+            "title": "Rate B",
+            "type": "number"
+          },
+          "task_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "rate_a",
+          "rate_b",
+          "delta"
+        ],
+        "title": "EvalTaskDelta",
         "type": "object"
       },
       "EvalTaskView": {
@@ -11936,6 +12286,75 @@
         ]
       }
     },
+    "/api/v1/evals/compare": {
+      "get": {
+        "operationId": "compare_eval_runs_api_v1_evals_compare_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "baseline",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Baseline",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "candidate",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Candidate",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalComparisonView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compare Eval Runs",
+        "tags": [
+          "evals"
+        ]
+      }
+    },
     "/api/v1/evals/runs": {
       "get": {
         "operationId": "list_eval_runs_api_v1_evals_runs_get",
@@ -12108,6 +12527,65 @@
           }
         },
         "summary": "Get Eval Run",
+        "tags": [
+          "evals"
+        ]
+      }
+    },
+    "/api/v1/evals/runs/{run_id}/attempts": {
+      "get": {
+        "operationId": "list_eval_attempts_api_v1_evals_runs__run_id__attempts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalAttemptListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Eval Attempts",
         "tags": [
           "evals"
         ]

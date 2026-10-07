@@ -21,6 +21,7 @@ from backend.app.core.telemetry import traced
 import os
 import shutil
 import sys
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -31,6 +32,9 @@ from backend.app.evals.runner import AgentOutcome, HiddenTestResult
 from backend.app.evals.suite import EvalTask
 
 OUTPUT_TAIL_BYTES = 4000
+# VerificationRequest.timeout_seconds is capped at this by the frozen contract.
+MAX_VERIFICATION_TIMEOUT_SECONDS = 300
+VERIFY_SCOPE = "change.legacy_verify"
 _TRUSTED_PATH = "/usr/local/bin:/usr/bin:/bin"
 
 
@@ -58,15 +62,17 @@ class SandboxHiddenTestRunner:
                  timeout_seconds: float = 600.0) -> None:
         self._cgroups_factory = cgroups
         self._cgroups = None
+        self._lock = threading.Lock()  # queued runs share one runner across workers
         self._limits = limits
         self._timeout = timeout_seconds
 
     def _hierarchy(self):
-        if self._cgroups is None:
-            hierarchy = self._cgroups_factory()
-            hierarchy.prepare()
-            self._cgroups = hierarchy
-        return self._cgroups
+        with self._lock:
+            if self._cgroups is None:
+                hierarchy = self._cgroups_factory()
+                hierarchy.prepare()
+                self._cgroups = hierarchy
+            return self._cgroups
 
     @traced("eval.hidden_check")
     def run(self, task: EvalTask, tree: Path, *, outcome: AgentOutcome) -> HiddenTestResult:
@@ -117,13 +123,22 @@ class VerificationHiddenTestRunner:
     def __init__(self, client: Any) -> None:
         self._client = client
 
+    def _verifier(self, change_id: UUID, ttl_seconds: int) -> UUID:
+        """A fresh actor holding only ``change.legacy_verify`` for this Change."""
+        grantor = self._client.create_actor("HUMAN", "Sentinel eval operator")
+        verifier = self._client.create_actor("HUMAN", "Sentinel eval hidden tests")
+        self._client.create_delegation(
+            grantor_id=UUID(grantor["id"]), grantee_id=UUID(verifier["id"]),
+            change_id=change_id, scopes=[VERIFY_SCOPE], ttl_seconds=ttl_seconds)
+        return UUID(verifier["id"])
+
     @traced("eval.hidden_check")
     def run(self, task: EvalTask, tree: Path, *, outcome: AgentOutcome) -> HiddenTestResult:
         if outcome.change_id is None:
             raise RuntimeError("confined verification needs the attempt's Change")
         actor_id = getattr(outcome, "actor_id", None)
-        if actor_id is None:
-            raise RuntimeError("confined verification needs the attempt's delegated actor")
+        if actor_id is None and self._client is None:
+            raise RuntimeError("confined verification needs the attempt's delegated actor or an API client")
         change_id = UUID(outcome.change_id)
         repository = Path(self._client.get_change(change_id)["repository_path"])
         # The fixture repository holds the applied result; the hidden tests join it
@@ -136,11 +151,15 @@ class VerificationHiddenTestRunner:
             raise RuntimeError("hidden tests contain a link or reparse point")
         shutil.copytree(hidden, repository / "hidden_tests", dirs_exist_ok=False)
         first, *rest = task.hidden_test_command
+        timeout = min(task.timeout_seconds, MAX_VERIFICATION_TIMEOUT_SECONDS)
+        if actor_id is None:
+            actor_id = self._verifier(change_id, max(600, timeout * 2))
         started = time.monotonic()
         result = self._client._request(
             "POST", f"/api/v1/changes/{change_id}/verify",
-            json_body={"actor_id": actor_id, "verification": {
-                "executable": first, "args": rest, "timeout_seconds": task.timeout_seconds}})
+            json_body={"actor_id": str(actor_id),
+                       "verification": {"executable": first, "args": rest,
+                                        "timeout_seconds": timeout}})
         verification = result.get("verification") or result
         status = verification.get("status")
         output = (verification.get("stdout") or "") + (verification.get("stderr") or "")

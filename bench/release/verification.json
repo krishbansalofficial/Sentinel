@@ -82,5 +82,20 @@
     ".NET acceptance used SDK-only console harness, not external NuGet testhost.",
     "No package publication, remote CI run, Pages hosting, release post, commit or push performed.",
     "Windows hostile descendant-spawn attempts were refused; no successful adversarial descendant containment claim."
-  ]
+  ],
+  "master_integration": {
+    "remote_base": "a47d20a",
+    "local_implementation_commit": "23861ca",
+    "renderer_unit_passed": 70,
+    "electron_unit_passed": 108,
+    "browser_passed": 6,
+    "electron_smoke_passed": 14,
+    "windows_selected_backend_combined_passed": 204,
+    "windows_corrected_modules_passed": 28,
+    "linux_selected_backend_passed": 42,
+    "linux_real_passed": 148,
+    "linux_real_skipped": 5,
+    "build_api_typecheck": "passed",
+    "method": "merge existing origin/master on master; normal push, no new branch"
+  }
 }

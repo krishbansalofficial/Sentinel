@@ -32,3 +32,8 @@ On Linux the real sandbox tests need bubblewrap and a delegated cgroup v2 subtre
 ## Good first issues
 
 Look for the `good first issue` label: small, well-specified changes with a test to write first.
+
+## License
+
+Sentinel is licensed under the [Apache License 2.0](LICENSE). Unless you state otherwise,
+any contribution you submit is licensed under the same terms (section 5 of the license).

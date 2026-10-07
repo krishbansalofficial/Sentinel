@@ -8,8 +8,9 @@
 
 ## Try the regression lab on Linux
 
-Python 3.12+, Git, and Node (for the Node tasks) are required. Install from the checkout
-while the release name and license metadata are pending:
+Python 3.12+, Git, and Node (for the Node tasks) are required. The package is
+`sentinel-runtime` (Apache License 2.0). Until the first tagged release is on PyPI
+(`pipx install sentinel-runtime`), install from the checkout:
 
 ```bash
 git clone https://github.com/krishbansalofficial/Sentinel.git
@@ -53,6 +54,7 @@ connected trace. The existing bearer-authenticated Prometheus endpoint is `/api/
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-1f2937.svg" alt="Windows and Linux">
   <img src="https://img.shields.io/badge/status-pre--release-b7791f.svg" alt="Pre-release">
   <img src="https://img.shields.io/badge/version-0.1.0-2563eb.svg" alt="Version 0.1.0">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-2563eb.svg" alt="Apache License 2.0">
   <img src="https://img.shields.io/badge/tests-2%2C200%2B-2f855a.svg" alt="2,200+ tests">
   <img src="https://img.shields.io/badge/threat--model-16%2F16%20reviewed-2f855a.svg" alt="16/16 threat-model findings reviewed">
 </p>
@@ -242,8 +244,8 @@ implement typed ports against that contract and are wired together in a single c
 
 ## Interfaces
 
-Every interface below talks to the same backend through the same frozen contract — 90
-operations across 84 routes, described by 147 typed schemas.
+Every interface below talks to the same backend through the same frozen contract — 92
+operations across 86 routes, described by 152 typed schemas.
 
 - **Backend** (`backend/app`) — a local FastAPI service and the single source of truth. SQLite in
   WAL mode, bearer-token authenticated, loopback by default.
@@ -292,3 +294,7 @@ A few of the load-bearing decisions:
 - **Tamper-evident by construction.** Every mutation and its journal event commit or roll back
   together in one transaction; the journal itself is append-only, hash-chained, and independently
   replay-verifiable.
+
+## License
+
+Sentinel is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE).

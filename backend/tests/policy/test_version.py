@@ -19,7 +19,7 @@ from backend.tests.passport.test_builder import _database, _seed_change
 
 
 def test_version_matches_package_api_cli_and_signed_payload(tmp_path) -> None:
-    expected = version("change-assurance")
+    expected = version("sentinel-runtime")
     assert product_version() == expected
 
     cli = CliRunner().invoke(cli_app, ["--version"])
@@ -41,7 +41,7 @@ def test_version_matches_package_api_cli_and_signed_payload(tmp_path) -> None:
 
 def test_source_checkout_version_fallback(monkeypatch, tmp_path) -> None:
     def missing(_name):
-        raise PackageNotFoundError("change-assurance")
+        raise PackageNotFoundError("sentinel-runtime")
 
     monkeypatch.setattr(version_module, "version", missing)
     assert product_version() == "0.1.0"
