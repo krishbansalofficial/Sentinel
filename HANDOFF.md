@@ -1,7 +1,7 @@
 # Sentinel: Handoff for the Next Build Phase
 
 Owner: Krish Bansal (kb). Fork: `krishbansalofficial/Sentinel` (upstream `csshlok/Sentinel`).
-Written: 2026-10-03. Status updated 2026-10-06. Read this whole file before touching code.
+Written: 2026-10-03. Status updated 2026-10-07. Read this whole file before touching code.
 
 ## 0. Status at a glance (read first)
 
@@ -9,8 +9,8 @@ Written: 2026-10-03. Status updated 2026-10-06. Read this whole file before touc
 | --- | --- | --- |
 | 0. Boot and test on Linux/macOS | **Done**, pushed | commits `cd1bf89`..`8236ca1` |
 | 1. Verified Linux agent boundary | **Done except Linux check boxes**; CI `linux-sandbox` job green (fork bomb included) | `0811441`..`c70b9e5` |
-| 2. `sentinel eval` | **Mostly done**: stats, suite, runner, drivers, CLI (`run/compare/report`), HTML report, 30-task seed suite. Remaining: backend eval store + API routes + journal events | `5e439dc`, `6a535c8` |
-| 3. Queue and crash recovery | Not started | |
+| 2. `sentinel eval` | **Done**: stats, suite, runner, drivers, CLI (`run/compare/report`, `--record`), HTML report, 30-task seed suite, backend store + API + journal events | `5e439dc`..`f10f8e2` |
+| 3. Queue and crash recovery | **Queue, pool, SIGKILL + chaos tests, bench done**; not yet wired into `sentinel eval run --workers` | `997406e` |
 | 4. Observability | Not started | |
 | 5. Adversarial fuzzer | Not started | |
 | 6. Release and users | Not started (license needs csshlok) | |
@@ -63,9 +63,12 @@ not available in containers (do not change `.wslconfig`: it restarts WSL and Doc
 * Evals: `backend/app/evals/{stats,suite,runner,agents,hidden}.py`, tests in `backend/tests/evals/`.
 
 ### Remaining work, in order
-1. **Phase 2 completion**: backend eval store (additive migration `eval_runs`, `eval_results`,
-   journal events on each attempt's Change), API routes and `sentinel eval run --record`;
-   tests for `SandboxHiddenTestRunner` (Linux) and `VerificationHiddenTestRunner` (Windows);
+0. **Phase 3 wiring**: `sentinel eval run --workers N --queue q.sqlite3` should enqueue
+   attempts in `evals/queue.py` and run `EvalRunner.run_attempt` per job through
+   `workers.run_pool`; on startup call `JobQueue.recover()` and remove leftover sandboxes with
+   `CgroupHierarchy.leftover_runs()` and `sentinel-eval-*` temp dirs. Budgets: compare
+   `cost_usd` with the task's `budget_usd` and pass `RunLimits(pids_max=...)`.
+1. **Phase 2 leftovers**: tests for `SandboxHiddenTestRunner` (Linux) and `VerificationHiddenTestRunner` (Windows);
    a first real `--agent claude` run (needs a Claude login) to fill the eval results table.
    Ubuntu 24.04 hosts need `packaging/apparmor/sentinel-bwrap` (read its trade-off note).
 2. **Linux confined check boxes** (Phase 1 item 6): a Linux `BoxPlatform` on the sandbox with
