@@ -1,0 +1,57 @@
+{
+  "command": "bench/concurrency/run.py --jobs 64 --job-seconds 0.2 --out /tmp/cb",
+  "machine": {
+    "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.36",
+    "python": "3.12.15",
+    "cpus": 32
+  },
+  "job_seconds": 0.2,
+  "throughput": [
+    {
+      "workers": 1,
+      "jobs": 64,
+      "seconds": 14.993714809417725,
+      "jobs_per_hour": 15366.43873306721,
+      "ideal_jobs_per_hour": 18000.0,
+      "queue_delay_p50_s": 7.416655898094177,
+      "queue_delay_p95_s": 14.03324965238571
+    },
+    {
+      "workers": 4,
+      "jobs": 64,
+      "seconds": 3.7276384830474854,
+      "jobs_per_hour": 61808.568896316174,
+      "ideal_jobs_per_hour": 72000.0,
+      "queue_delay_p50_s": 1.7744187116622925,
+      "queue_delay_p95_s": 3.4098602294921863
+    },
+    {
+      "workers": 8,
+      "jobs": 64,
+      "seconds": 2.032038927078247,
+      "jobs_per_hour": 113383.65467795393,
+      "ideal_jobs_per_hour": 144000.0,
+      "queue_delay_p50_s": 0.9109364748001099,
+      "queue_delay_p95_s": 1.7142666816711423
+    },
+    {
+      "workers": 16,
+      "jobs": 64,
+      "seconds": 1.3769023418426514,
+      "jobs_per_hour": 167332.1287925658,
+      "ideal_jobs_per_hour": 288000.0,
+      "queue_delay_p50_s": 0.55898118019104,
+      "queue_delay_p95_s": 1.0973798036575315
+    }
+  ],
+  "recovery": {
+    "jobs": 64,
+    "workers": 4,
+    "done_at_kill": 32,
+    "leases_recovered": 4,
+    "first_completion_after_restart_s": 0.1372387409210205,
+    "restart_to_finish_s": 1.1211848258972168,
+    "jobs_lost": 0,
+    "duplicate_completions": 0
+  }
+}
