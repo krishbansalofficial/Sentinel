@@ -110,3 +110,31 @@ def test_report_html_escapes_untrusted_task_ids(tmp_path: Path) -> None:
                              "agent": None, "hidden": {"boundary": "UNCONFINED"}}]}
     page = render_html(document)
     assert "<img" not in page and "<b>t</b>" not in page and "&lt;b&gt;" in page
+
+
+def test_a_parallel_queued_run_matches_the_sequential_run_exactly(tmp_path: Path) -> None:
+    sequential = load_document(_run(tmp_path, "seq", "--seed", "9", "--mock-skill", "0.5"))
+    parallel_out = _run(tmp_path, "par", "--seed", "9", "--mock-skill", "0.5", "--workers", "4")
+    parallel = load_document(parallel_out)
+    key = lambda doc: sorted((r["task_id"], r["attempt"], r["status"]) for r in doc["results"])
+    assert key(parallel) == key(sequential)
+    assert parallel["queue"]["DONE"] == 12 and parallel["queue"]["FAILED"] == 0
+    assert Path(parallel["queue"]["path"]).exists()
+
+
+def test_resume_finishes_an_interrupted_queued_run(tmp_path: Path) -> None:
+    from backend.app.evals.queue import JobQueue
+
+    queue_path = tmp_path / "interrupted.sqlite3"
+    queue = JobQueue(queue_path)
+    queue.enqueue("run-1", ["op-add"], k=2)
+    stuck = queue.claim("dead-worker", lease_seconds=3600)  # its process "died" mid-job
+    assert stuck is not None
+    out = _run(tmp_path, "resumed", "--seed", "1", "--mock-skill", "1.0", "--queue",
+               str(queue_path), "--resume", "run-1")
+    document = load_document(out)
+    assert document["id"] == "run-1"
+    assert sorted((r["task_id"], r["attempt"]) for r in document["results"]) == [
+        ("clamp-0", 1), ("clamp-0", 2), ("empty-largest", 1), ("empty-largest", 2),
+        ("fizzbuzz-3-5", 1), ("fizzbuzz-3-5", 2), ("op-add", 1), ("op-add", 2),
+        ("range-sum-5", 1), ("range-sum-5", 2), ("str-reverse", 1), ("str-reverse", 2)]

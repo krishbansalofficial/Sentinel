@@ -64,6 +64,10 @@ def run_command(
     seed: int = typer.Option(0, "--seed"),
     allow_unconfined: bool = typer.Option(False, "--allow-unconfined-hidden-tests"),
     record: bool = typer.Option(False, "--record", help="Also store the run in the backend"),
+    workers: int = typer.Option(1, "--workers", min=1, max=64,
+                                help="Run attempts in parallel through the crash-safe job queue"),
+    queue_path: Path = typer.Option(None, "--queue", help="Job queue file (default next to --out)"),
+    resume: str = typer.Option(None, "--resume", help="Finish an interrupted queued run by id"),
     api_url: str = typer.Option("http://127.0.0.1:8000", "--api-url",
                                 envvar="CHANGE_ASSURANCE_API_URL"),
 ) -> None:
@@ -88,9 +92,12 @@ def run_command(
         raise typer.BadParameter("--agent must be mock or claude")
     config = AgentConfig(name or agent, agent=agent, model=model, prompt_template=prompt_template)
     runner = EvalRunner(driver, _hidden_runner(agent, client, allow_unconfined))
-    run = runner.run(tasks, config=config, k=k, suite=str(suite))
-    document = run_to_document(run)
-    target = out or Path("results") / f"{run.id}.json"
+    if workers > 1 or queue_path is not None or resume is not None:
+        document = _run_queued(runner, tasks, config, k, str(suite), workers=workers,
+                               queue_path=queue_path, out=out, resume=resume)
+    else:
+        document = run_to_document(runner.run(tasks, config=config, k=k, suite=str(suite)))
+    target = out or Path("results") / f"{document['id']}.json"
     write_document(document, target)
     if html_out is not None:
         html_out.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +111,38 @@ def run_command(
                            "attempts": summary.attempts, "rate": summary.rate,
                            "interval": [summary.low, summary.high], "errors": summary.errors},
                           sort_keys=True))
+
+
+def _run_queued(runner, tasks, config, k: int, suite: str, *, workers: int,
+                queue_path: Path | None, out: Path | None, resume: str | None) -> dict:
+    """Attempts as jobs in the SQLite queue: parallel, and resumable after a crash."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from backend.app.evals.queue import JobQueue
+    from backend.app.evals.report import SCHEMA
+    from backend.app.evals.runner import EvalRun
+    from backend.app.evals.workers import run_pool
+
+    run_id = resume or str(uuid4())
+    path = queue_path or (out.with_suffix(".queue.sqlite3") if out is not None
+                          else Path("results") / f"{run_id}.queue.sqlite3")
+    queue = JobQueue(path)
+    queue.recover()  # a previous process that died left RUNNING leases behind
+    queue.enqueue(run_id, [task.id for task in tasks], k)
+    by_id = {task.id: task for task in tasks}
+    run = EvalRun(id=run_id, suite=suite, config=config, k=k,
+                  started_at=datetime.now(UTC).isoformat())
+    lease = max(task.timeout_seconds for task in tasks) * 2.0
+    run_pool(queue, lambda job: runner.run_attempt(run, by_id[job.task_id], job.attempt).to_payload(),
+             workers=workers, lease_seconds=lease)
+    results = queue.results(run_id)
+    counts = queue.counts(run_id)
+    if counts["FAILED"]:
+        typer.echo(f"warning: {counts['FAILED']} job(s) failed repeatedly and have no result", err=True)
+    return {"schema": SCHEMA, "id": run_id, "suite": suite, "config": config.to_payload(), "k": k,
+            "started_at": run.started_at, "completed_at": datetime.now(UTC).isoformat(),
+            "results": results, "queue": {"path": str(path), "workers": workers, **counts}}
 
 
 @eval_app.command("compare")
