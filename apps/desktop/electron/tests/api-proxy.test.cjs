@@ -134,8 +134,14 @@ test("long execution deadlines are bounded and apply only to execution POSTs", a
     }
     await proxy({ method: "GET", path: "/api/v1/changes/id/verify", timeoutMs: 9_000_000 });
     assert.equal(durations.at(-1), 60_000);
-    await proxy({ method: "POST", path: "/api/v1/changes/id/evidence/current", timeoutMs: 9_000_000 });
-    assert.equal(durations.at(-1), 60_000);
+      await proxy({ method: "POST", path: "/api/v1/changes/id/evidence/current", timeoutMs: 9_000_000 });
+      assert.equal(durations.at(-1), 180_000);
+      await proxy({ method: "POST", path: "/api/v1/changes/id/evidence/baseline", timeoutMs: 9_000_000 });
+      assert.equal(durations.at(-1), 180_000);
+      for (const [method, path] of [["GET", "/api/v1/changes/id/evidence/current"], ["POST", "/api/v1/changes/id/evidence/other"]]) {
+        await proxy({ method, path, timeoutMs: 9_000_000 });
+        assert.equal(durations.at(-1), 60_000);
+      }
     for (const timeoutMs of [-1, Infinity, NaN, 0]) {
       await proxy({ method: "POST", path: "/api/v1/changes/id/verify", timeoutMs });
       assert.equal(durations.at(-1), 15_000);

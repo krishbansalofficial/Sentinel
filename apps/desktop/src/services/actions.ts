@@ -63,7 +63,8 @@ export const updateContract = (id: string, body: { contract: ChangeContract; exp
   http.put<ChangeView>(`${base(id)}/contract`, body);
 
 export const captureEvidence = (id: string, kind: "baseline" | "current") =>
-  http.post<EvidenceSnapshot>(`${base(id)}/evidence/${kind}`, undefined, idem());
+  // Environment discovery can run eleven individually bounded tool probes.
+  http.post<EvidenceSnapshot>(`${base(id)}/evidence/${kind}`, undefined, { ...idem(), timeoutMs: 180_000 });
 
 export const buildPassport = (id: string) => http.post<ChangePassport>(`${base(id)}/passport`, undefined, idem());
 export const exportSignedPassport = (id: string) => http.post<SignedPassportExport>(`${base(id)}/passport/export`, undefined, idem());

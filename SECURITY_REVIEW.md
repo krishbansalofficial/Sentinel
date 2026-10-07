@@ -51,8 +51,8 @@ The WSL host uses hybrid cgroups. A private mount namespace exposes its existing
 cgroup v2 mount for local isolation, attribution, freeze and cleanup tests without
 changing host mounts. This harness disables unavailable resource controllers;
 memory and process-count enforcement tests therefore skip. Production requires
-those controllers and retains its fail-closed behavior. The dedicated Linux CI
-job must verify them; its new remote run remains outstanding.
+those controllers and retains its fail-closed behavior. The dedicated Linux CI job on commit b9392e4 passed with pids, memory and CPU
+controllers enabled (Tests run #53, 2026-10-06). The local WSL limit still applies.
 
 Cargo dependencies must be vendored; .NET restore requires SDK-only dependencies
 or a local feed. The .NET acceptance test uses a console harness and does not

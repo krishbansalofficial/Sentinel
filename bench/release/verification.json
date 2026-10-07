@@ -97,5 +97,19 @@
     "linux_real_skipped": 5,
     "build_api_typecheck": "passed",
     "method": "merge existing origin/master on master; normal push, no new branch"
+  },
+  "ci53_desktop_followup": {
+    "source_run": 37561401923,
+    "renderer_unit_passed": 70,
+    "electron_unit_passed": 108,
+    "browser_full_passed": 114,
+    "browser_full_skipped": 1,
+    "slow_capture_regression_passed": 1,
+    "electron_smoke_passed": 14,
+    "build_typecheck_api": "passed",
+    "remote_linux_backend_3_12": "success",
+    "remote_linux_backend_3_14": "success",
+    "remote_linux_sandbox_with_resource_controllers": "success",
+    "remote_updated_desktop": "pending"
   }
 }

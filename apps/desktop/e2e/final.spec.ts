@@ -13,15 +13,11 @@ const api = async (method: string, path: string, body?: unknown) => {
 };
 
 let id = "";
+let humanId = "";
+let agentId = "";
 let page: Page;
 const errors: string[] = [];
 const dlg = () => page.getByRole("dialog");
-/** Selects the option whose visible text matches (selectOption itself only takes exact labels). */
-async function pick(select: import("@playwright/test").Locator, match: RegExp) {
-  const label = (await select.locator("option").allTextContents()).find((t) => match.test(t));
-  if (!label) throw new Error(`no option matching ${match}`);
-  await select.selectOption({ label });
-}
 const tab = (name: string) => page.getByRole("navigation", { name: "Change sections" }).getByRole("link", { name, exact: true });
 
 test.beforeAll(async ({ browser }) => {
@@ -41,23 +37,31 @@ test.afterAll(async () => {
 });
 
 test("authority: create two actors and delegate scopes between them", async () => {
+  const suffix = crypto.randomUUID();
   for (const [name, kind] of [["Ada Lovelace", "HUMAN"], ["Build agent", "AGENT"]] as const) {
     await page.getByRole("button", { name: "Create actor" }).click();
-    await dlg().getByLabel("Display name").fill(name);
+    await dlg().getByLabel("Display name").fill(`${name} ${suffix}`);
     await dlg().getByLabel("Kind").selectOption(kind);
-    await dlg().getByRole("button", { name: "Create actor" }).click();
+    const [created] = await Promise.all([
+      page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/v1/actors"),
+      dlg().getByRole("button", { name: "Create actor" }).click(),
+    ]);
+    expect(created.status()).toBe(201);
+    const actor = await created.json();
+    if (kind === "HUMAN") humanId = actor.id;
+    else agentId = actor.id;
     await expect(dlg()).toHaveCount(0);
   }
-  await expect(page.getByText("Ada Lovelace · human")).toBeVisible();
+  await expect(page.getByText(`Ada Lovelace ${suffix} · human`)).toBeVisible();
   await page.getByRole("button", { name: "Delegate authority" }).click();
-  await pick(dlg().getByLabel("Granted by"), /Ada/);
-  await pick(dlg().getByLabel("Granted to"), /Build agent/);
+  await dlg().getByLabel("Granted by").selectOption(humanId);
+  await dlg().getByLabel("Granted to").selectOption(agentId);
   await dlg().getByLabel("Run assurance checks").check();
   await dlg().getByLabel("Fork the Change").check();
   await dlg().getByLabel("Launch a top-level agent").check();
   await dlg().getByRole("button", { name: "Delegate", exact: true }).click();
   await expect(dlg()).toHaveCount(0);
-  const row = page.getByRole("row", { name: /Build agent/ });
+  const row = page.getByRole("row").filter({ hasText: `Build agent ${suffix}` });
   await expect(row).toContainText("Active");
   await expect(row).toContainText("assurance.run");
 });
@@ -72,15 +76,24 @@ test("state: Draft moves to Active now that authority exists", async () => {
 });
 
 test("evidence: capture, compare, and fork from a checkpoint", async () => {
+  // Cold CI tool discovery is bounded per probe, but can take several minutes overall.
+  test.setTimeout(420_000);
   await tab("Evidence").click();
-  await page.getByRole("button", { name: "Capture baseline" }).click();
+  const capture = async (kind: "baseline" | "current") => {
+    const [response] = await Promise.all([
+      page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname === `/api/v1/changes/${id}/evidence/${kind}`, { timeout: 180_000 }),
+      page.getByRole("button", { name: kind === "baseline" ? "Capture baseline" : "Capture current" }).click(),
+    ]);
+    expect(response.ok(), await response.text()).toBeTruthy();
+  };
+  await capture("baseline");
   await expect(page.getByRole("row", { name: /baseline/ })).toBeVisible();
   appendFileSync(`${process.env.CA_E2E_REPO}/README.md`, "\nchanged by the e2e run\n");
-  await page.getByRole("button", { name: "Capture current" }).click();
+  await capture("current");
   await expect(page.getByRole("table", { name: "Git checkpoints" }).getByRole("row")).toHaveCount(3);
   await expect(page.getByText("README.md").first()).toBeVisible(); // the comparison lists the changed file
   await page.getByRole("row", { name: /baseline/ }).getByRole("button", { name: "Fork from here" }).click();
-  await pick(dlg().getByLabel("Forked by"), /Build agent/);
+  await dlg().getByLabel("Forked by").selectOption(agentId);
   await dlg().getByLabel("New title").fill("Fork of the e2e change");
   await dlg().getByLabel("New intent").fill("Try the other approach");
   await dlg().getByRole("button", { name: "Create fork" }).click();

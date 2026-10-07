@@ -108,6 +108,21 @@ test("capturing evidence shows the capture's limitations", async ({ page }) => {
   expect(api.calls.at(-1)!.path).toBe("evidence/baseline");
 });
 
+test("evidence capture survives tool discovery beyond the ordinary request deadline", async ({ page }) => {
+  test.setTimeout(45_000);
+  const c = change();
+  await open(page, `/changes/${c.id}/evidence`, { changes: [c] });
+  await page.route(`**/api/v1/changes/${c.id}/evidence/baseline`, async (route) => {
+    // Reproduce discovery taking longer than the normal 15-second request budget.
+    await new Promise((resolve) => setTimeout(resolve, 16_000));
+    await route.fallback();
+  });
+  await page.getByRole("button", { name: "Capture baseline" }).click();
+  await expect(page.getByText(/file writes are not attributed/)).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByText("Capture failed", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Capture baseline" })).toBeEnabled();
+});
+
 test("passport: empty state, build, digest, limitations and export", async ({ page }) => {
   const c = change();
   await open(page, `/changes/${c.id}/passport`, { changes: [c] });

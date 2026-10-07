@@ -670,3 +670,39 @@ The merge is committed on the existing master branch and sent through a normal
 (non-force) push to origin/master. No upstream push, separate branch, tag or package
 release is part of this follow-up. Earlier no-commit/no-push statements describe
 the implementation phase before this explicit integration request.
+
+## CI #53 desktop failure follow-up (2026-10-06 EDT)
+
+Fetched the actual fork job logs (run 37561401923, desktop job 112599257899).
+The serial evidence workflow waited only five seconds for a baseline row while
+cold tool discovery was still running. Its serial retry recreated globally stored
+actors with the same names, producing a strict-locator error for duplicate Ada
+Lovelace actors. The original job reported 105 passing tests, one failure, one
+flaky case, one skip and seven unrun serial dependents.
+
+Fixes: captureEvidence now requests a bounded 180-second deadline; the Electron
+proxy grants that cap only to POST baseline/current capture routes. GETs and
+unknown evidence paths retain 60-second caps, and ordinary requests keep their
+15-second defaults. Environment capture probes up to eleven tools, each bounded
+at ten seconds. Proxy tests cover both capture routes and negative cases.
+
+The workflow test waits for the actual successful evidence HTTP response before
+asserting rendered checkpoints and has an overall bounded capture-flow deadline.
+Actors get unique display names per attempt, and selectors/delegations/forks use
+the actual actor IDs from creation responses, avoiding retry leftovers and option
+loading races. A regression deliberately delays capture 16 seconds and verifies
+it succeeds without a Capture failed notice and re-enables the action button.
+
+Validation: 70 renderer plus 108 Electron unit tests, API consistency/typecheck,
+production build and a rebuilt packaged Electron application passed. All 14
+Electron smoke checks passed. Full browser run: **114 passed, one opt-in skip**
+(115 collected); the new slow-capture regression separately **passed**, giving
+115 passing cases and one skip over all 116 current cases. No failures or retries
+in the full run. Logs are `.tmp/ci53-*`. The owner-authorized direct master push
+triggers a new CI run; its remote desktop result is checked separately.
+
+Remote CI #53 confirmed both Linux backend versions and the dedicated kernel
+sandbox job passed, with pids/memory/cpu controllers enabled. This supersedes the
+prior claim that resource-controller validation lacked remote CI evidence. WSL
+still lacks those controllers locally. Windows backend jobs were still running
+when this desktop fix was prepared.
