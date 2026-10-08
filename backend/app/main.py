@@ -66,6 +66,7 @@ from backend.app.core.runtime_service import (
 from backend.app.credentials.broker import CredentialBroker
 from backend.app.credentials.selection import select_credential_store
 from backend.app.evals.store import EvalStore
+from backend.app.core.metrics import render_metrics
 from backend.app.workspace.profiles import LinuxWorkspaceProfiles
 from backend.app.execution.check_box import CheckBoxes
 from backend.app.execution.check_repository import CheckRunRepository
@@ -462,6 +463,7 @@ def _build_runtime_services(
                    if workspace_manager is not None else None),
         checks=CheckRunService(CheckRunRepository(database), service),
         evals=EvalStore(database, journal=resolved_journal),
+        metrics=partial(render_metrics, database),
     )
 
 

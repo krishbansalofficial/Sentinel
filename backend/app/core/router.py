@@ -1019,6 +1019,13 @@ def build_router(service: ChangeService, runtime: RuntimeServices) -> APIRouter:
     # -- Tool Registry (bounded scope: top-level executable + declared -------
     # manifests only; see B.1/B.10 non-goals echoed in every response) --------
 
+    @router.get("/metrics", tags=["system"], response_class=Response,
+                responses={200: {"content": {"text/plain": {}}}})
+    def metrics() -> Response:
+        from backend.app.core.metrics import CONTENT_TYPE
+
+        return Response(content=runtime.metrics(), media_type=CONTENT_TYPE)
+
     @router.post("/evals/runs", response_model=EvalRunView, status_code=201, tags=["evals"])
     def record_eval_run(request: EvalRunUpload) -> EvalRunView:
         return EvalRunView.model_validate(

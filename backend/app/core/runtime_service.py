@@ -811,3 +811,4 @@ class RuntimeServices:
     workspace: WorkspaceService | None = None
     checks: CheckRunService | None = None
     evals: Any = None  # backend.app.evals.store.EvalStore (Phase 2)
+    metrics: Any = None  # () -> Prometheus text (Phase 4)
