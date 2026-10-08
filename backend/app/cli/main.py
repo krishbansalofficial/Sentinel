@@ -909,6 +909,24 @@ def run_command(
         raise typer.Exit(EXIT_GATE_STOPPED)
 
 
+@app.command("doctor")
+def doctor_command(json_: bool = JsonOption) -> None:
+    """Check this machine's prerequisites (Python, Git, credentials, Linux sandbox)."""
+    from dataclasses import asdict
+
+    from backend.app.cli.doctor import exit_code, run_checks
+
+    checks = run_checks()
+    if json_:
+        typer.echo(json.dumps({"checks": [asdict(check) for check in checks]}, sort_keys=True))
+    else:
+        for check in checks:
+            typer.echo(f"[{check.status:>4}] {check.name}: {check.detail}")
+            if check.remedy:
+                typer.echo(f"       fix: {check.remedy}")
+    raise typer.Exit(exit_code(checks))
+
+
 @app.command("migrate-store")
 def migrate_store_command(
     from_path: str | None = typer.Option(

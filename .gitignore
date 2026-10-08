@@ -35,6 +35,8 @@ node_modules/
 !/README.md
 # The active cross-platform plan is a shared, tracked document.
 !/HANDOFF.md
+!/CONTRIBUTING.md
+!/.github/**/*.md
 # HANDOFF rule 9: every benchmark documents its command, hardware and raw output.
 !/bench/**/*.md
 *.txt
