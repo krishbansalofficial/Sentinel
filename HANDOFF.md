@@ -1,7 +1,7 @@
 # Sentinel: Handoff for the Next Build Phase
 
 Owner: Krish Bansal (kb). Fork: `krishbansalofficial/Sentinel` (upstream `csshlok/Sentinel`).
-Written: 2026-10-03. Status updated 2026-10-07. Read this whole file before touching code.
+Written: 2026-10-03. Status updated 2026-10-08. Read this whole file before touching code.
 
 ## 0. Status at a glance (read first)
 
@@ -10,10 +10,10 @@ Written: 2026-10-03. Status updated 2026-10-07. Read this whole file before touc
 | 0. Boot and test on Linux/macOS | **Done**, pushed | commits `cd1bf89`..`8236ca1` |
 | 1. Verified Linux agent boundary | **Done except Linux check boxes**; CI `linux-sandbox` job green (fork bomb included) | `0811441`..`c70b9e5` |
 | 2. `sentinel eval` | **Done**: stats, suite, runner, drivers, CLI (`run/compare/report`, `--record`), HTML report, 30-task seed suite, backend store + API + journal events | `5e439dc`..`f10f8e2` |
-| 3. Queue and crash recovery | **Queue, pool, SIGKILL + chaos tests, bench done**; not yet wired into `sentinel eval run --workers` | `997406e` |
-| 4. Observability | Not started | |
-| 5. Adversarial fuzzer | Not started | |
-| 6. Release and users | Not started (license needs csshlok) | |
+| 3. Queue and crash recovery | **Done**: queue, pool, fencing, SIGKILL + chaos tests, bench, `eval run --workers/--queue/--resume` | `997406e`, `5ad8598` |
+| 4. Observability | **Partial**: Prometheus `/api/v1/metrics` done; OpenTelemetry spans and the desktop Eval page remain | `75962e0` |
+| 5. Adversarial fuzzer | **Linux done** (40 scenarios, 153 behaviors, 0 escapes, `bench/fuzz/`); Windows AppContainer fuzzing remains | this push |
+| 6. Release and users | **Partial**: `sentinel doctor`, CONTRIBUTING.md, issue templates. Remaining: license (needs csshlok), PyPI name, README quickstart + eval table, leaderboard page, launch | `8561d98` |
 
 Decisions taken (kb, 2026-10-03): **D-03** built-in profiles declare a boundary per platform
 (`boundaries=(("win32", APPCONTAINER), ("linux", LINUX_SANDBOX))`; an unnamed platform is
@@ -63,11 +63,9 @@ not available in containers (do not change `.wslconfig`: it restarts WSL and Doc
 * Evals: `backend/app/evals/{stats,suite,runner,agents,hidden}.py`, tests in `backend/tests/evals/`.
 
 ### Remaining work, in order
-0. **Phase 3 wiring**: `sentinel eval run --workers N --queue q.sqlite3` should enqueue
-   attempts in `evals/queue.py` and run `EvalRunner.run_attempt` per job through
-   `workers.run_pool`; on startup call `JobQueue.recover()` and remove leftover sandboxes with
-   `CgroupHierarchy.leftover_runs()` and `sentinel-eval-*` temp dirs. Budgets: compare
-   `cost_usd` with the task's `budget_usd` and pass `RunLimits(pids_max=...)`.
+0. **Phase 4**: optional OpenTelemetry spans (launch, boundary verification, checks, eval
+   jobs; exporter off by default, OTLP when configured; new dependency needs a justification) and
+   an Eval page in the desktop app reading `GET /api/v1/evals/runs` (client already generated).
 1. **Phase 2 leftovers**: tests for `SandboxHiddenTestRunner` (Linux) and `VerificationHiddenTestRunner` (Windows);
    a first real `--agent claude` run (needs a Claude login) to fill the eval results table.
    Ubuntu 24.04 hosts need `packaging/apparmor/sentinel-bwrap` (read its trade-off note).

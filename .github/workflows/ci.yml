@@ -92,4 +92,4 @@ jobs:
           # sandbox may move processes between its run cgroups and the leaf.
           echo $$ | sudo tee "$D/shell/cgroup.procs"
           export SENTINEL_TEST_CGROUP_PARENT="$D"
-          python -m pytest -q -rs backend/tests/execution/linux backend/tests/execution/test_seccomp.py backend/tests/execution/test_cgroups.py
+          SENTINEL_FUZZ_SCENARIOS=25 python -m pytest -q -rs backend/tests/execution/linux backend/tests/execution/test_seccomp.py backend/tests/execution/test_cgroups.py
