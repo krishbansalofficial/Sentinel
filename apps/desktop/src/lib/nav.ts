@@ -1,4 +1,4 @@
-import { Bot, Compass, GitBranch, GitPullRequestArrow, House, Settings, Users, Wrench, type LucideIcon } from "lucide-react";
+import { FlaskConical, Bot, Compass, GitBranch, GitPullRequestArrow, House, Settings, Users, Wrench, type LucideIcon } from "lucide-react";
 
 export interface NavItem { to: string; label: string; icon: LucideIcon }
 export interface NavGroup { heading: string; items: NavItem[] }
@@ -6,7 +6,7 @@ export interface NavGroup { heading: string; items: NavItem[] }
 /** Every destination here is a real screen. Groups keep global surfaces apart from the per-Change workspace. */
 export const NAV_GROUPS: NavGroup[] = [
   { heading: "Workspace", items: [{ to: "/home", label: "Home", icon: House }, { to: "/changes", label: "Changes", icon: GitPullRequestArrow }, { to: "/walkthrough", label: "Walkthrough", icon: Compass }] },
-  { heading: "Control", items: [{ to: "/agents", label: "Agents", icon: Bot }, { to: "/actors", label: "Actors", icon: Users }, { to: "/tools", label: "Tools", icon: Wrench }] },
+  { heading: "Control", items: [{ to: "/agents", label: "Agents", icon: Bot }, { to: "/actors", label: "Actors", icon: Users }, { to: "/tools", label: "Tools", icon: Wrench }, { to: "/evals", label: "Eval", icon: FlaskConical }] },
   { heading: "Integrations", items: [{ to: "/github", label: "GitHub", icon: GitBranch }] },
   { heading: "System", items: [{ to: "/settings", label: "Settings", icon: Settings }] },
 ];

@@ -50,6 +50,8 @@ const timelineRoute = createRoute({ getParentRoute: () => changeRoute, path: "ti
 const extra = [["assurance", lazy(() => import("@/features/assurance/AssuranceTab"), "AssuranceTab")], ["agents", lazy(() => import("@/features/agents/AgentsTab"), "AgentsTab")], ["delivery", lazy(() => import("@/features/delivery/DeliveryTab"), "DeliveryTab")], ["authority", lazy(() => import("@/features/authority/AuthorityTab"), "AuthorityTab")], ["recovery", lazy(() => import("@/features/recovery/RecoveryTab"), "RecoveryTab")], ["passport", lazy(() => import("@/features/passport/PassportTab"), "PassportTab")], ["apply", lazy(() => import("@/features/applyback/ApplyBackTab"), "ApplyBackTab")]] as const;
 const extraRoutes = extra.map(([path, component]) => createRoute({ getParentRoute: () => changeRoute, path, component }));
 
+const evalsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/evals", component: lazy(() => import("@/features/evals/EvalsPage"), "EvalsPage") });
+
 const toolsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/tools", component: lazy(() => import("@/features/tools/ToolsPage"), "ToolsPage") });
 const toolDetailRoute = createRoute({ getParentRoute: () => rootRoute, path: "/tools/$toolId", component: lazy(() => import("@/features/tools/ToolDetailPage"), "ToolDetailPage") });
 const walkthroughRoute = createRoute({ getParentRoute: () => rootRoute, path: "/walkthrough", component: lazy(() => import("@/features/workspace/WalkthroughPage"), "WalkthroughPage") });
@@ -63,6 +65,7 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   changesRoute,
   changeRoute.addChildren([overviewRoute, contractRoute, evidenceRoute, ...extraRoutes, timelineRoute]),
+  evalsRoute,
   toolsRoute,
   toolDetailRoute,
   walkthroughRoute,
