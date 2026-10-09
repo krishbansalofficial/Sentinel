@@ -17,6 +17,42 @@ Written: 2026-10-03. Status updated 2026-10-09. Read this whole file before touc
 
 Verification for `b00ad7b`..`42aea0a` (2026-10-09): Windows targeted suites (core, evals, policy, launcher, contract, AppContainer fuzz) green after the fixes in those commits; Linux full suite 2024 passed with the only failures being the README count and CI pin tests fixed in `42aea0a`/`b00ad7b` and telemetry tests needing the `[telemetry]` extra (86/86 green with it); desktop typecheck, api:check and 65 unit tests green. Docker is only the Windows dev box's way to reach a Linux kernel for tests; Sentinel never uses Docker at runtime.
 
+### Next: Linux confined check boxes (design worked out 2026-10-09, not yet coded)
+Every consumer of box facts goes through three functions, so the change is contained:
+1. `execution/linux_check_box.py`: a `LinuxBoxPlatform` filling `check_box.BoxPlatform`:
+   `derive_package_sid(name) -> "linux-sandbox:" + name`; `ensure_profile` makes
+   `<store>/linux-checks/Packages/<name>/AC` (0700) and returns an object with
+   `package_sid` and `container_path`; `local_appdata()` returns `<store>/linux-checks`;
+   `grant`/`revoke` are no-ops (read-only binds replace ACLs); `delete_profile` no-op,
+   `profile_exists` = directory exists; `base_environment` gives PATH (runtime entries +
+   `/usr/local/bin:/usr/bin:/bin`), `HOME`/`TMPDIR` in scratch, `LANG`; `spawn(...)` builds a
+   `SandboxSpec` (writable: the box `AC/tree`, `AC/scratch`; read-only: runtime binds;
+   network only if `internetClient` in capabilities) in a new run cgroup and returns the
+   `LinuxSandboxProcess` (it has `.linux_sandbox` facts).
+2. A Linux resolver (`linux_resolve_check_runtime`) instead of snapshots: python binds the
+   interpreter's venv and base prefix read-only (`pyvenv.cfg` `home` gives the base); node binds
+   its prefix and the repo's `node_modules` onto `tree/node_modules` (add `SandboxSpec.mounts`
+   with explicit destinations); go binds GOROOT with GOCACHE/GOPATH in `scratch_env`,
+   `GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0`; cargo/dotnet stay refused as on Windows.
+   Add `BoxRuntime.readonly_binds` and pass it to `spawn` only when non-empty.
+3. `CheckBox.run`: when the process has `.linux_sandbox`, journal `boundary: "LINUX_SANDBOX"`
+   with `facts.to_payload()`; make `CheckRunFacts.appcontainer` optional and add
+   `linux_sandbox`; `verified_boundary` returns `LINUX_SANDBOX` only for `verified_linux_facts`.
+4. `check_repository.check_run_fact`: the claimed boundary is per record (`linux-sandbox:`
+   identity -> LINUX_SANDBOX verified by `linux_sandbox.verified_linux_facts`, else
+   APPCONTAINER by `verified_token_facts`); never cross-accept. Same in
+   `change_check_runs_fact` and `runtime_service.list_for_change` (line ~753).
+   `assurance/diff_coverage.py:459` accepts either verified boundary.
+5. Contract (additive): `"LINUX_SANDBOX"` in the check-run boundary literals
+   (`contracts/models.py` lines ~255, ~1244, ~1528, ~1553); regenerate openapi + desktop client;
+   desktop check-run views need a `LINUX_SANDBOX` label (mirror `features/passport/v2.ts`).
+6. Wire in `main.create_app` on Linux: `CheckBoxes(..., platform=LinuxBoxPlatform(store),
+   resolver=linux_resolve_check_runtime)`; make `sweep_runtime_cache` a no-op without a cache.
+7. Tests: unit tests with fake facts (cross-acceptance refused, tampered payloads FAIL),
+   then real-kernel tests in `tests/execution/linux/` mirroring `acceptance/test_confined_checks.py`
+   (agent-authored conftest cannot write outside, read the store/token, or reach the network;
+   each with a host positive control), and the Passport `confined_checks` PASS for a Linux run.
+
 Decisions taken (kb, 2026-10-03): **D-03** built-in profiles declare a boundary per platform
 (`boundaries=(("win32", APPCONTAINER), ("linux", LINUX_SANDBOX))`; an unnamed platform is
 UNAVAILABLE). **LINUX_SANDBOX ranks with APPCONTAINER** (one strength class, own name, never
