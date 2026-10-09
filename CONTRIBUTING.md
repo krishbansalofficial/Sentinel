@@ -20,7 +20,7 @@ more than features. Read `HANDOFF.md` (section 2) before your first change.
 ## Setup
 
 ```bash
-python -m pip install -e ".[test,tui,keyring]"
+python -m pip install -e ".[test,tui,keyring,telemetry]"
 sentinel doctor            # what this machine can and cannot do, with fixes
 python -m pytest -q
 cd apps/desktop && npm ci && npm test

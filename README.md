@@ -6,13 +6,51 @@
 
 <h3 align="center">a change assurance runtime for AI coding agents</h3>
 
+## Try the regression lab on Linux
+
+Python 3.12+, Git, and Node (for the Node tasks) are required. Install from the checkout
+while the release name and shared license are pending:
+
+```bash
+git clone https://github.com/krishbansalofficial/Sentinel.git
+cd Sentinel
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[test,tui,keyring,telemetry]'
+sentinel doctor
+sentinel eval run --suite evals/tasks --agent mock --task op-add --k 1 \
+  --mock-skill 1 --allow-unconfined-hidden-tests --out results/smoke.json --html results/smoke.html
+sentinel eval leaderboard results/smoke.json --html results/index.html
+```
+
+This smoke test uses a mock agent and explicitly runs hidden tests on the host. A real
+Linux agent requires bubblewrap, usable user namespaces and delegated cgroup v2 controllers;
+`sentinel doctor` explains missing prerequisites. Ubuntu's AppArmor setup is documented in
+[the shipped profile](packaging/apparmor/sentinel-bwrap). Windows uses AppContainer and Job
+Objects. General Linux confined verification remains pending; unavailable checks fail closed.
+
+| Recorded evaluation | Attempts | Passed | Wilson 95% interval | Boundary |
+| --- | ---: | ---: | --- | --- |
+| Mock smoke, `op-add`, skill=1 | 1 | 1 | 20.7%–100.0% | UNCONFINED |
+| Claude | — | — | Awaiting an authenticated run | — |
+
+The [raw smoke result](bench/observability/mock-smoke.json) validates the pipeline. Mock cost
+and tokens are synthetic. It is not a model benchmark. Use `--record` against a running
+authenticated backend to view results in the desktop **Eval** page. The leaderboard command
+builds a static page from selected result files; compare matching suites and task sets.
+
+Tracing is off by default. With the `telemetry` extra installed, set
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` in both the backend and eval CLI processes.
+See [the Jaeger smoke test](bench/observability/README.md) for the Docker command and captured
+connected trace. The existing bearer-authenticated Prometheus endpoint is `/api/v1/metrics`.
+
 <p align="center">
   Give an AI agent real write access to your repository, and get back independently
   observed, tamper-evident, signed evidence of exactly what it did.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-Windows-1f2937.svg" alt="Windows">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-1f2937.svg" alt="Windows and Linux">
   <img src="https://img.shields.io/badge/status-pre--release-b7791f.svg" alt="Pre-release">
   <img src="https://img.shields.io/badge/version-0.1.0-2563eb.svg" alt="Version 0.1.0">
   <img src="https://img.shields.io/badge/tests-2%2C200%2B-2f855a.svg" alt="2,200+ tests">
@@ -183,8 +221,8 @@ implement typed ports against that contract and are wired together in a single c
 
 ## Interfaces
 
-Every interface below talks to the same backend through the same frozen contract — 86
-operations across 81 routes, described by 142 typed schemas.
+Every interface below talks to the same backend through the same frozen contract — 90
+operations across 84 routes, described by 146 typed schemas.
 
 - **Backend** (`backend/app`) — a local FastAPI service and the single source of truth. SQLite in
   WAL mode, bearer-token authenticated, loopback by default.
