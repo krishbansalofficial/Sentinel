@@ -13,14 +13,16 @@ import re
 from backend.app.core.database import Database
 
 CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
-_BOUNDARY_FAILURE = re.compile(
-    r"(APPCONTAINER_[A-Z_]+|LINUX_SANDBOX_UNAVAILABLE|LINUX_SANDBOX_VERIFICATION_FAILED|"
-    r"LINUX_CGROUP_UNAVAILABLE|AGENT_RUNTIME_PROFILE_UNAVAILABLE)")
+# Only the launcher's own refusal line counts ("The agent did not start (CODE): ..."),
+# read from the limitations Sentinel wrote, never from agent-controlled stdout/stderr.
+_REFUSAL = re.compile(r"^The agent did not start \(([A-Z][A-Z0-9_]{2,63})\)")
 _LABEL_ESCAPE = str.maketrans({"\\": "\\\\", '"': '\\"', "\n": "\\n"})
+_CONTROL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")
 
 
 def _label(value: object) -> str:
-    return str(value).translate(_LABEL_ESCAPE)
+    text = str(value)[:200].translate(_LABEL_ESCAPE)
+    return _CONTROL.sub(lambda match: f"\\x{ord(match.group()):02x}", text)
 
 
 def _metric(lines: list[str], name: str, kind: str, help_text: str,
@@ -38,8 +40,9 @@ def render_metrics(database: Database, *, eval_runs: int = 20) -> str:
         changes = connection.execute("SELECT COUNT(*) FROM changes").fetchone()[0]
         runs = connection.execute(
             "SELECT status, COUNT(*) FROM agent_runs GROUP BY status").fetchall()
-        error_payloads = [row[0] for row in connection.execute(
-            "SELECT payload_json FROM agent_runs WHERE status = 'ERROR'")]
+        error_limitations = [row[0] for row in connection.execute(
+            "SELECT json_extract(payload_json, '$.limitations') FROM agent_runs "
+            "WHERE status = 'ERROR'")]
         checks = connection.execute(
             "SELECT state, COUNT(*) FROM check_runs GROUP BY state").fetchall()
         evals = connection.execute(
@@ -50,10 +53,15 @@ def render_metrics(database: Database, *, eval_runs: int = 20) -> str:
     _metric(lines, "sentinel_agent_runs_total", "counter", "Recorded agent runs by status.",
             [({"status": status}, count) for status, count in runs] or [({"status": "PASSED"}, 0)])
     failures: dict[str, int] = {}
-    for payload in error_payloads:
-        match = _BOUNDARY_FAILURE.search(payload or "")
-        if match:
-            failures[match.group(1)] = failures.get(match.group(1), 0) + 1
+    for limitations in error_limitations:
+        try:
+            entries = json.loads(limitations) if limitations else []
+        except ValueError:
+            entries = []
+        codes = {match.group(1) for entry in entries if isinstance(entry, str)
+                 for match in [_REFUSAL.match(entry)] if match}
+        for code in codes:
+            failures[code] = failures.get(code, 0) + 1
     _metric(lines, "sentinel_boundary_failures_total", "counter",
             "Agent launches refused or failed at the boundary, by error code.",
             [({"code": code}, count) for code, count in sorted(failures.items())]

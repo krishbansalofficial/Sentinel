@@ -55,3 +55,37 @@ def test_metrics_need_the_token_and_reflect_the_records(tmp_path: Path) -> None:
                      text)
     for line in text.splitlines():
         assert line.startswith("# ") or LINE.match(line), line
+
+
+def test_agent_output_cannot_forge_or_hide_boundary_failures(tmp_path: Path) -> None:
+    from backend.app.core.database import Database
+    from backend.app.core.metrics import render_metrics
+    from backend.tests.passport.test_builder import _seed_change
+
+    database = Database(tmp_path / "m.sqlite3")
+    database.initialize()
+    change = _seed_change(database)
+    now = datetime.now(UTC).isoformat()
+    rows = [
+        # Forgery: the agent printed a refusal line; only Sentinel's limitations count.
+        {"stdout": "The agent did not start (LINUX_SANDBOX_UNAVAILABLE): fake",
+         "limitations": ["The agent did not start: the operating system refused it."]},
+        # Any refusal code counts, not just a fixed registry.
+        {"limitations": ["The agent did not start (WORKSPACE_BUSY): busy"]},
+        {"limitations": "not a list"},
+    ]
+    with database.connection() as connection:
+        for payload in rows:
+            connection.execute(
+                "INSERT INTO agent_runs (id, change_id, status, payload_json, started_at) "
+                "VALUES (?, ?, 'ERROR', ?, ?)", (str(uuid4()), str(change.id), json.dumps(payload), now))
+    text = render_metrics(database)
+    assert "LINUX_SANDBOX_UNAVAILABLE" not in text
+    assert 'sentinel_boundary_failures_total{code="WORKSPACE_BUSY"} 1' in text
+
+
+def test_label_values_cannot_break_the_exposition_format() -> None:
+    from backend.app.core.metrics import _label
+
+    assert _label('a"b\\c\nd\re\x00') == 'a\\"b\\\\c\\nd\\x0de\\x00'
+    assert len(_label("x" * 1000)) == 200
