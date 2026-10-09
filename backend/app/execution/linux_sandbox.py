@@ -31,6 +31,8 @@ unconfined retry exists (D-01).
 
 from __future__ import annotations
 
+from backend.app.core.telemetry import traced
+
 import json
 import os
 import select
@@ -273,6 +275,7 @@ class LinuxSandboxFacts:
         return payload
 
 
+@traced("boundary.verify.linux")
 def observe_facts(pid: int, *, expected_cgroup: str, network: bool,
                   proc_root: Path = Path("/proc")) -> LinuxSandboxFacts:
     """Read and judge the boundary facts of ``pid`` (never raises for a mismatch)."""

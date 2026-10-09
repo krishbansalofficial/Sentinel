@@ -22,6 +22,8 @@ continues with the next one.
 
 from __future__ import annotations
 
+from backend.app.core.telemetry import traced
+
 import hashlib
 import shutil
 import tempfile
@@ -197,6 +199,7 @@ class EvalRunner:
         self._workdir = workdir
         self._clock = clock
 
+    @traced("eval.run")
     def run(self, tasks: Iterable[EvalTask], *, config: AgentConfig, k: int, suite: str,
             run_id: str | None = None) -> EvalRun:
         if k < 1:
@@ -212,6 +215,7 @@ class EvalRunner:
         run.completed_at = datetime.now(UTC).isoformat()
         return run
 
+    @traced("eval.job")
     def run_attempt(self, run: EvalRun, task: EvalTask, attempt: int) -> AttemptResult:
         started = self._clock()
         with tempfile.TemporaryDirectory(prefix=f"sentinel-eval-{task.id}-",

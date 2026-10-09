@@ -8,6 +8,7 @@ host child, and every such result says ``UNCONFINED``.
 """
 
 from __future__ import annotations
+from backend.app.core.telemetry import traced
 
 import json
 import sys
@@ -113,6 +114,7 @@ def run_command(
                           sort_keys=True))
 
 
+@traced("eval.run")
 def _run_queued(runner, tasks, config, k: int, suite: str, *, workers: int,
                 queue_path: Path | None, out: Path | None, resume: str | None) -> dict:
     """Attempts as jobs in the SQLite queue: parallel, and resumable after a crash."""
@@ -183,4 +185,16 @@ def report_command(results: Path = typer.Argument(...),
     """Render a static HTML report from a results file."""
     html_out.parent.mkdir(parents=True, exist_ok=True)
     html_out.write_text(render_html(load_document(results)), encoding="utf-8")
+    typer.echo(str(html_out))
+
+
+@eval_app.command("leaderboard")
+def leaderboard_command(results: list[Path] = typer.Argument(...),
+                        html_out: Path = typer.Option(..., "--html")) -> None:
+    """Build a static leaderboard from selected results files for review or GitHub Pages."""
+    from backend.app.evals.leaderboard import render_leaderboard
+
+    page = render_leaderboard(load_document(path) for path in results)
+    html_out.parent.mkdir(parents=True, exist_ok=True)
+    html_out.write_text(page, encoding="utf-8")
     typer.echo(str(html_out))

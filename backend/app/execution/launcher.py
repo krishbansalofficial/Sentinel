@@ -26,6 +26,8 @@ memory only; persisting them is a shared-core integration responsibility.
 
 from __future__ import annotations
 
+from backend.app.core.telemetry import traced
+
 import base64
 import os
 import re
@@ -315,6 +317,7 @@ class AgentLauncher:
 
         return resolve_profile(adapter, self._profiles)
 
+    @traced("agent.launch")
     def launch(
         self, change_id: UUID, repository_path: str, request: AgentLaunchRequest,
         output_limit_bytes: int,
@@ -771,6 +774,7 @@ class AgentLauncher:
 
     # -- shared run body -------------------------------------------------------
 
+    @traced("agent.execute")
     def _execute(
         self, *, change_id: UUID, adapter: AgentAdapter, request: AgentLaunchRequest,
         output_limit_bytes: int, run_id: UUID, argv: list[str] | None,

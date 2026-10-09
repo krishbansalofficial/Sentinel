@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+from backend.app.core.telemetry import trace_headers
 from typing import Any
 from uuid import UUID
 
@@ -71,6 +72,7 @@ class ApiClient:
         timeout_seconds: float | None = None,
     ) -> Any:
         headers = {"Accept": "application/json"}
+        headers.update(trace_headers())
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         body = None

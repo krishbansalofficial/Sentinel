@@ -17,6 +17,8 @@ restricted-token launcher.
 
 from __future__ import annotations
 
+from backend.app.core.telemetry import traced
+
 import ctypes
 import os
 import shutil
@@ -645,6 +647,7 @@ def query_token_facts(process_handle: int) -> TokenFacts:
         _kernel32.CloseHandle(token)
 
 
+@traced("boundary.verify.windows")
 def verify_boundary(
     facts: TokenFacts, *, expected_package_sid: str,
     expected_capability_sids: Sequence[str], job_member: bool,

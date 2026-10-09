@@ -27,6 +27,11 @@ test = [
   "pytest==8.4.2",
   "pytest-cov==7.1.0",
 ]
+# SDK/exporter are opt-in: export connected runtime traces to an OTLP collector.
+telemetry = [
+  "opentelemetry-sdk==1.38.0",
+  "opentelemetry-exporter-otlp-proto-http==1.38.0",
+]
 tui = [
   "textual==0.89.1",
 ]

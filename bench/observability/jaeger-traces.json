@@ -1,0 +1,165 @@
+{
+    "data":  [
+                 {
+                     "traceID":  "eb2253ec1c85f101257ec1d91f3c2b6e",
+                     "spans":  [
+                                   {
+                                       "traceID":  "eb2253ec1c85f101257ec1d91f3c2b6e",
+                                       "spanID":  "525ceb6831f165c9",
+                                       "operationName":  "eval.hidden_check.unconfined",
+                                       "references":  [
+                                                          {
+                                                              "refType":  "CHILD_OF",
+                                                              "traceID":  "eb2253ec1c85f101257ec1d91f3c2b6e",
+                                                              "spanID":  "6cba5c28debb0110"
+                                                          }
+                                                      ],
+                                       "startTime":  1791126060313490,
+                                       "duration":  105539,
+                                       "tags":  [
+                                                    {
+                                                        "key":  "otel.scope.name",
+                                                        "type":  "string",
+                                                        "value":  "sentinel.runtime"
+                                                    },
+                                                    {
+                                                        "key":  "sentinel.attempt",
+                                                        "type":  "string",
+                                                        "value":  "1"
+                                                    },
+                                                    {
+                                                        "key":  "sentinel.run_id",
+                                                        "type":  "string",
+                                                        "value":  "21dc42f3-ef6e-407b-85ac-e4a0a006e606"
+                                                    },
+                                                    {
+                                                        "key":  "sentinel.task_id",
+                                                        "type":  "string",
+                                                        "value":  "op-add"
+                                                    },
+                                                    {
+                                                        "key":  "span.kind",
+                                                        "type":  "string",
+                                                        "value":  "internal"
+                                                    }
+                                                ],
+                                       "logs":  [
+
+                                                ],
+                                       "processID":  "p1",
+                                       "warnings":  null
+                                   },
+                                   {
+                                       "traceID":  "eb2253ec1c85f101257ec1d91f3c2b6e",
+                                       "spanID":  "6cba5c28debb0110",
+                                       "operationName":  "eval.job",
+                                       "references":  [
+                                                          {
+                                                              "refType":  "CHILD_OF",
+                                                              "traceID":  "eb2253ec1c85f101257ec1d91f3c2b6e",
+                                                              "spanID":  "20343d548cbcee6e"
+                                                          }
+                                                      ],
+                                       "startTime":  1791126059754636,
+                                       "duration":  671026,
+                                       "tags":  [
+                                                    {
+                                                        "key":  "otel.scope.name",
+                                                        "type":  "string",
+                                                        "value":  "sentinel.runtime"
+                                                    },
+                                                    {
+                                                        "key":  "sentinel.attempt",
+                                                        "type":  "string",
+                                                        "value":  "1"
+                                                    },
+                                                    {
+                                                        "key":  "sentinel.outcome",
+                                                        "type":  "string",
+                                                        "value":  "PASSED"
+                                                    },
+                                                    {
+                                                        "key":  "sentinel.run_id",
+                                                        "type":  "string",
+                                                        "value":  "21dc42f3-ef6e-407b-85ac-e4a0a006e606"
+                                                    },
+                                                    {
+                                                        "key":  "sentinel.task_id",
+                                                        "type":  "string",
+                                                        "value":  "op-add"
+                                                    },
+                                                    {
+                                                        "key":  "span.kind",
+                                                        "type":  "string",
+                                                        "value":  "internal"
+                                                    }
+                                                ],
+                                       "logs":  [
+
+                                                ],
+                                       "processID":  "p1",
+                                       "warnings":  null
+                                   },
+                                   {
+                                       "traceID":  "eb2253ec1c85f101257ec1d91f3c2b6e",
+                                       "spanID":  "20343d548cbcee6e",
+                                       "operationName":  "eval.run",
+                                       "references":  [
+
+                                                      ],
+                                       "startTime":  1791126059754530,
+                                       "duration":  671186,
+                                       "tags":  [
+                                                    {
+                                                        "key":  "otel.scope.name",
+                                                        "type":  "string",
+                                                        "value":  "sentinel.runtime"
+                                                    },
+                                                    {
+                                                        "key":  "sentinel.run_id",
+                                                        "type":  "string",
+                                                        "value":  "21dc42f3-ef6e-407b-85ac-e4a0a006e606"
+                                                    },
+                                                    {
+                                                        "key":  "span.kind",
+                                                        "type":  "string",
+                                                        "value":  "internal"
+                                                    }
+                                                ],
+                                       "logs":  [
+
+                                                ],
+                                       "processID":  "p1",
+                                       "warnings":  null
+                                   }
+                               ],
+                     "processes":  {
+                                       "p1":  {
+                                                  "serviceName":  "sentinel",
+                                                  "tags":  [
+                                                               {
+                                                                   "key":  "telemetry.sdk.language",
+                                                                   "type":  "string",
+                                                                   "value":  "python"
+                                                               },
+                                                               {
+                                                                   "key":  "telemetry.sdk.name",
+                                                                   "type":  "string",
+                                                                   "value":  "opentelemetry"
+                                                               },
+                                                               {
+                                                                   "key":  "telemetry.sdk.version",
+                                                                   "type":  "string",
+                                                                   "value":  "1.38.0"
+                                                               }
+                                                           ]
+                                              }
+                                   },
+                     "warnings":  null
+                 }
+             ],
+    "total":  0,
+    "limit":  0,
+    "offset":  0,
+    "errors":  null
+}

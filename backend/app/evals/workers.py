@@ -9,6 +9,7 @@ exceptions release the job back to the queue (FAILED after ``max_claims``).
 from __future__ import annotations
 
 import threading
+from contextvars import copy_context
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -69,7 +70,7 @@ def run_pool(queue: JobQueue, handler: Handler, *, workers: int,
         with lock:
             totals.append(count)
 
-    threads = [threading.Thread(target=one) for _ in range(workers)]
+    threads = [threading.Thread(target=copy_context().run, args=(one,)) for _ in range(workers)]
     for thread in threads:
         thread.start()
     for thread in threads:

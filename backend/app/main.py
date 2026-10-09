@@ -12,6 +12,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from backend.app.core.telemetry import TraceMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.app.assurance.engine import AssuranceEngine
@@ -300,6 +301,7 @@ def create_app(
         version=API_VERSION,
         lifespan=lifespan,
     )
+    app.add_middleware(TraceMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[resolved_settings.ui_origin],

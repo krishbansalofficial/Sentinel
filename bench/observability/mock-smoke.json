@@ -1,0 +1,50 @@
+{
+  "completed_at": "2026-10-04T15:01:00.425697+00:00",
+  "config": {
+    "agent": "mock",
+    "model": null,
+    "name": "mock",
+    "prompt_template": "{prompt}",
+    "settings": {}
+  },
+  "id": "21dc42f3-ef6e-407b-85ac-e4a0a006e606",
+  "k": 1,
+  "results": [
+    {
+      "agent": {
+        "boundary": "UNCONFINED",
+        "change_id": null,
+        "cost_usd": 0.011334,
+        "descendant_count": 0,
+        "detail": "mock agent (synthetic cost and tokens)",
+        "forbidden_refusals": 0,
+        "input_tokens": 988,
+        "output_tokens": 558,
+        "passport_id": null,
+        "policy_decision": null,
+        "run_id": null,
+        "status": "PASSED",
+        "wall_seconds": 0.001981700013857335
+      },
+      "attempt": 1,
+      "error": null,
+      "hidden": {
+        "boundary": "UNCONFINED",
+        "duration_seconds": 0.10438380000414327,
+        "exit_code": 0,
+        "output_tail": "ok\r\n",
+        "passed": true,
+        "timed_out": false
+      },
+      "hidden_tests_absent": true,
+      "run_id": "21dc42f3-ef6e-407b-85ac-e4a0a006e606",
+      "started_at": "2026-10-04T15:01:00.425607+00:00",
+      "status": "PASSED",
+      "task_id": "op-add",
+      "wall_seconds": 0.6709495999966748
+    }
+  ],
+  "schema": "sentinel-eval-run/1",
+  "started_at": "2026-10-04T15:00:59.754558+00:00",
+  "suite": "evals\\tasks"
+}

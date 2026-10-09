@@ -16,6 +16,7 @@ in the test support code.
 """
 
 from __future__ import annotations
+from backend.app.core.telemetry import traced
 
 import os
 import shutil
@@ -67,6 +68,7 @@ class SandboxHiddenTestRunner:
             self._cgroups = hierarchy
         return self._cgroups
 
+    @traced("eval.hidden_check")
     def run(self, task: EvalTask, tree: Path, *, outcome: AgentOutcome) -> HiddenTestResult:
         from backend.app.execution.cgroups import RunLimits
         from backend.app.execution.linux_sandbox import SandboxSpec, spawn_linux_sandbox
@@ -106,6 +108,7 @@ class VerificationHiddenTestRunner:
     def __init__(self, client: Any) -> None:
         self._client = client
 
+    @traced("eval.hidden_check")
     def run(self, task: EvalTask, tree: Path, *, outcome: AgentOutcome) -> HiddenTestResult:
         if outcome.change_id is None:
             raise RuntimeError("confined verification needs the attempt's Change")
@@ -126,7 +129,7 @@ class VerificationHiddenTestRunner:
         return HiddenTestResult(
             passed=status == "PASSED", exit_code=verification.get("exit_code"),
             timed_out=status == "TIMED_OUT", duration_seconds=time.monotonic() - started,
-            boundary=verification.get("boundary") or "APPCONTAINER",
+            boundary=verification.get("boundary") or "UNKNOWN",
             output_tail=output[-OUTPUT_TAIL_BYTES:])
 
 
@@ -139,6 +142,7 @@ class UnconfinedHiddenTestRunner:
     automatically.
     """
 
+    @traced("eval.hidden_check.unconfined")
     def run(self, task: EvalTask, tree: Path, *, outcome: AgentOutcome) -> HiddenTestResult:
         from backend.app.execution.hidden_host import run_hidden_tests_unconfined
 

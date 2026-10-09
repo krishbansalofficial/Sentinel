@@ -22,6 +22,8 @@ and digests only (no argv text, output or host paths).
 
 from __future__ import annotations
 
+from backend.app.core.telemetry import traced
+
 import ctypes
 import hashlib
 import json
@@ -934,6 +936,7 @@ class CheckBox:
 
     # ------------------------------------------------------------------ run
 
+    @traced("check.run")
     def run(
         self, argv: Sequence[str], *, timeout: float, limit: int,
         stderr_limit: int | None = None,
