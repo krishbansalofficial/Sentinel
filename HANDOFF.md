@@ -1,7 +1,7 @@
 # Sentinel: Handoff for the Next Build Phase
 
 Owner: Krish Bansal (kb). Fork: `krishbansalofficial/Sentinel` (upstream `csshlok/Sentinel`).
-Written: 2026-10-03. Status updated 2026-10-08. Read this whole file before touching code.
+Written: 2026-10-03. Status updated 2026-10-09. Read this whole file before touching code.
 
 ## 0. Status at a glance (read first)
 
@@ -11,9 +11,11 @@ Written: 2026-10-03. Status updated 2026-10-08. Read this whole file before touc
 | 1. Verified Linux agent boundary | **Done except Linux check boxes**; CI `linux-sandbox` job green (fork bomb included) | `0811441`..`c70b9e5` |
 | 2. `sentinel eval` | **Done**: stats, suite, runner, drivers, CLI (`run/compare/report`, `--record`), HTML report, 30-task seed suite, backend store + API + journal events | `5e439dc`..`f10f8e2` |
 | 3. Queue and crash recovery | **Done**: queue, pool, fencing, SIGKILL + chaos tests, bench, `eval run --workers/--queue/--resume` | `997406e`, `5ad8598` |
-| 4. Observability | **Partial**: Prometheus `/api/v1/metrics` done; OpenTelemetry spans and the desktop Eval page remain | `75962e0` |
-| 5. Adversarial fuzzer | **Linux done** (40 scenarios, 153 behaviors, 0 escapes, `bench/fuzz/`); Windows AppContainer fuzzing remains | this push |
-| 6. Release and users | **Partial**: `sentinel doctor`, CONTRIBUTING.md, issue templates. Remaining: license (needs csshlok), PyPI name, README quickstart + eval table, leaderboard page, launch | `8561d98` |
+| 4. Observability | **Done**: optional OTLP spans (`[telemetry]` extra), connected Jaeger trace, `/api/v1/metrics` (hardened: counts only Sentinel's own refusal lines), desktop Eval page with run comparison | `75962e0`, `b00ad7b`, `a934b9f`, `4c6a6e4` |
+| 5. Adversarial fuzzer | **Linux done** (40 scenarios, 153 behaviors, 0 escapes); Windows seeded AppContainer fuzzer passes 12 scenarios / 48 behavior attempts, 0 observed escapes | `bench/fuzz/`, `9cc2d40`, `42aea0a`; Windows child-spawn attempts were refused on this host |
+| 6. Release and users | **Partial**: doctor, contribution docs/templates, README quickstart + honest mock eval table, static leaderboard CLI + preview. Remaining: agreed license, package registration, real Claude results, GIF, Pages publication, launch | `bench/release/`; PyPI metadata check returned 404, no name reservation |
+
+Verification for `b00ad7b`..`42aea0a` (2026-10-09): Windows targeted suites (core, evals, policy, launcher, contract, AppContainer fuzz) green after the fixes in those commits; Linux full suite 2024 passed with the only failures being the README count and CI pin tests fixed in `42aea0a`/`b00ad7b` and telemetry tests needing the `[telemetry]` extra (86/86 green with it); desktop typecheck, api:check and 65 unit tests green. Docker is only the Windows dev box's way to reach a Linux kernel for tests; Sentinel never uses Docker at runtime.
 
 Decisions taken (kb, 2026-10-03): **D-03** built-in profiles declare a boundary per platform
 (`boundaries=(("win32", APPCONTAINER), ("linux", LINUX_SANDBOX))`; an unnamed platform is
@@ -63,17 +65,31 @@ not available in containers (do not change `.wslconfig`: it restarts WSL and Doc
 * Evals: `backend/app/evals/{stats,suite,runner,agents,hidden}.py`, tests in `backend/tests/evals/`.
 
 ### Remaining work, in order
-0. **Phase 4**: optional OpenTelemetry spans (launch, boundary verification, checks, eval
-   jobs; exporter off by default, OTLP when configured; new dependency needs a justification) and
-   an Eval page in the desktop app reading `GET /api/v1/evals/runs` (client already generated).
+0. **Phase 4 follow-up**: confirm CI with the new `telemetry` optional extra; run a real
+   authenticated Claude eval with tracing. Local acceptance includes a connected mock trace
+   in Jaeger, desktop build/tests and three Eval browser tests. Spans cover launch, boundary
+   verification, checks and eval jobs; W3C context crosses the CLI/API and worker threads.
 1. **Phase 2 leftovers**: tests for `SandboxHiddenTestRunner` (Linux) and `VerificationHiddenTestRunner` (Windows);
    a first real `--agent claude` run (needs a Claude login) to fill the eval results table.
    Ubuntu 24.04 hosts need `packaging/apparmor/sentinel-bwrap` (read its trade-off note).
 2. **Linux confined check boxes** (Phase 1 item 6): a Linux `BoxPlatform` on the sandbox with
    network off, Linux facts in the `check.confined_run` payload, Passport `confined_checks`
    accepting them. Until then Linux checks fail closed.
-3. Phases 3 to 6 as written below. Phase 3 can reuse `CgroupHierarchy.leftover_runs()` for the
-   startup sweep of orphaned sandboxes.
+3. **Phase 5/6 follow-up**: extend Windows scenarios to race junctions and exercise successfully
+   spawned hostile descendants on a suitable host; review `bench/fuzz/windows-results.xml`.
+   Review `bench/release/leaderboard-smoke.html`; obtain license agreement, select the package
+   name, collect real agent results/GIF, then publish and launch. No public release was made.
+
+Implementation verification (2026-10-04): 87 existing eval/contract tests passed; 51 targeted
+telemetry/hidden-runner/leaderboard/dependency/Windows boundary tests passed; 12 Windows fuzz
+scenarios passed. Desktop unit/Electron suites, generated-client check, typecheck, production
+build and three new Eval Playwright cases passed. Full Windows/Linux suites were not rerun.
+Additional queue, eval API and CLI checks passed (115 cases after rerunning the one CLI
+smoke failure). That failure also reproduced on an isolated HEAD snapshot: the temporary
+uv-created environment lacked pip. `python -m ensurepip --upgrade` fixed the environment,
+and the CLI smoke plus all five final tracing tests passed. No production workaround was added.
+Windows hidden-test results no longer invent APPCONTAINER when boundary evidence is absent:
+they report UNKNOWN. No API schema change was required.
 
 ## 1. The goal in one paragraph
 
@@ -123,7 +139,7 @@ These invariants already exist in the codebase. Breaking one is a bug, not a tra
 Useful commands:
 
 ```bash
-python -m pip install -e ".[test,tui]"
+python -m pip install -e ".[test,tui,keyring,telemetry]"
 python -m pytest -q                              # full suite (about 28 min on Windows)
 python -m pytest backend/tests/execution -q      # one area
 sentinel --version
@@ -346,7 +362,8 @@ Measure in `bench/concurrency/`: throughput (jobs per hour) and queue delay at c
    with `npm run api:generate`).
 
 Acceptance:
-- [ ] One eval run produces a connected trace viewable in Jaeger (document the docker command).
+- [x] One eval run produces a connected trace viewable in Jaeger (mock `op-add`, explicitly
+      UNCONFINED hidden tests; raw trace and Docker command in `bench/observability/`).
 
 ### Phase 5: Adversarial testing (about 1 week)
 
