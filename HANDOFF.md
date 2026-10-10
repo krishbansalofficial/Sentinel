@@ -8,7 +8,7 @@ Written: 2026-10-03. Status updated 2026-10-09. Read this whole file before touc
 | Phase | State | Where |
 | --- | --- | --- |
 | 0. Boot and test on Linux/macOS | **Done**, pushed | commits `cd1bf89`..`8236ca1` |
-| 1. Verified Linux agent boundary | **Done**, including Linux confined check boxes; CI confirmation for this continuation pending | `0811441`..`c70b9e5` |
+| 1. Verified Linux agent boundary | **Done**, including Linux confined check boxes; Linux CI confirmed, Windows CI test fixes await a new run | `0811441`..`c70b9e5` |
 | 2. `sentinel eval` | **Done**: stats, suite, runner, drivers, CLI (`run/compare/report`, `--record`), HTML report, 30-task seed suite, backend store + API + journal events | `5e439dc`..`f10f8e2` |
 | 3. Queue and crash recovery | **Done**: queue, pool, fencing, SIGKILL + chaos tests, bench, `eval run --workers/--queue/--resume` | `997406e`, `5ad8598` |
 | 4. Observability | **Done**: optional OTLP spans (`[telemetry]` extra), connected Jaeger trace, `/api/v1/metrics` (hardened: counts only Sentinel's own refusal lines), desktop Eval page with run comparison | `75962e0`, `b00ad7b`, `a934b9f`, `4c6a6e4` |
@@ -59,8 +59,18 @@ Verification for this continuation (2026-10-04):
   backend/tests/execution/test_check_box.py backend/tests/acceptance/test_contract_boundaries.py`.
 * Desktop: `npm run api:check`, `npm test`, `npm run typecheck`, and `npm run build` passed;
   **69 unit tests and 104 Electron tests**, zero failures.
-* CI: check the post-push runs, especially linux-sandbox; local controller skips
-  do not establish that job's success.
+* CI run `37228136353` for `7a3d29e`: linux-sandbox and both full Linux jobs passed.
+  Both Windows jobs failed eight seeded fuzzer scenarios because Node 22 throws
+  synchronous `spawn EPERM`; Python 3.12 also hit the tools-table worker timing race.
+  Local follow-up catches synchronous child-spawn refusals while preserving all
+  completion/escape assertions, adds a real-AppContainer forced-denial regression,
+  and waits for tools/approval results in the TUI test. Affected suites:
+  **26 passed** with `.tmp/windows-suite-env/Scripts/python.exe -m pytest -o addopts= -q
+  backend/tests/execution/test_fuzz_appcontainer.py
+  backend/tests/tui/test_pilot_real_worker_flows.py`. Existing real AppContainer
+  boundary suite: **20 passed** using the same command with
+  `backend/tests/execution/test_appcontainer.py`. A new CI run must verify these fixes;
+  passing local tests do not establish that a new Windows CI run will pass.
 
 Decisions taken (kb, 2026-10-03): **D-03** built-in profiles declare a boundary per platform
 (`boundaries=(("win32", APPCONTAINER), ("linux", LINUX_SANDBOX))`; an unnamed platform is

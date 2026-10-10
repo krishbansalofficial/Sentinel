@@ -288,23 +288,23 @@ async def test_tools_screen_real_approve_decision_reaches_the_api(live_change) -
         assert isinstance(app.screen, ToolTrustScreen)
 
         table = pilot.app.query_one(DataTable)
+        await _wait_for_rows(pilot, "#tools", timeout=10.0)
         assert table.row_count == 1
         table.cursor_coordinate = (0, 0)
         await pilot.pause()
 
         approve = pilot.app.query_one("#approve", Button)
+        await _wait_until(pilot, lambda: not approve.disabled)
         assert approve.disabled is False
         await pilot.click("#approve")
-        await pilot.pause()
-        await pilot.pause()
-
-        tools = client.list_tools_for_change(change_id)["items"]
-        assert tools[0]["trust_state"] == "APPROVED"
 
         result = pilot.app.query_one("#result")
         await _wait_until(pilot, lambda: "APPROVE" in str(result.renderable))
         result_text = str(result.renderable)
         assert "APPROVE" in result_text
+
+        tools = client.list_tools_for_change(change_id)["items"]
+        assert tools[0]["trust_state"] == "APPROVED"
 
         await pilot.press("escape")
         await pilot.pause()

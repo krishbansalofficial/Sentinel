@@ -20,6 +20,22 @@ SEED = 20261004
 SCENARIOS = int(os.environ.get("SENTINEL_FUZZ_SCENARIOS", "12"))
 
 
+def test_hostile_scenario_sync_spawn_denial(profile, node_exe, tmp_path, monkeypatch):
+    """Exercise CI's synchronous Node denial while retaining every escape assertion."""
+    real_run = _run
+
+    def deny_spawn(profile, node_exe, script, **kwargs):
+        assert "detached:true" in script
+        prefix = (
+            "require('child_process').spawn=()=>{"
+            "throw Object.assign(new Error('spawn EPERM'),{code:'EPERM'});};"
+        )
+        return real_run(profile, node_exe, prefix + script, **kwargs)
+
+    monkeypatch.setattr(__name__ + "._run", deny_spawn)
+    test_hostile_scenario(0, profile, node_exe, tmp_path)
+
+
 @pytest.mark.parametrize("scenario", range(SCENARIOS))
 def test_hostile_scenario(scenario, profile, node_exe, tmp_path):
     secret = secrets.token_hex(24)
@@ -52,7 +68,7 @@ def test_hostile_scenario(scenario, profile, node_exe, tmp_path):
         "read_secret": f"try {{const s=fs.readFileSync({json.dumps(str(secret_file))}); console.log(s.toString(),s.toString('base64'));}} catch(e) {{console.log('read_secret',e.code);}}",
         "junction": f"try {{fs.symlinkSync({json.dumps(str(tmp_path))},'link','junction'); fs.writeFileSync('link/escape','escaped'); console.log('ESCAPED');}} catch(e) {{console.log('junction',e.code);}}",
         "local_api": f"const s=require('net').connect({listener.getsockname()[1]},'127.0.0.1'); s.on('connect',()=>{{console.log('ESCAPED');s.destroy();}}); s.on('error',()=>console.log('local_api denied')); s.setTimeout(1000,()=>s.destroy());",
-        "detached": "const c=cp.spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',windowsHide:true}); c.on('error',e=>console.log('detached denied',e.code)); console.log('PID',c.pid); c.unref();",
+        "detached": "try {const c=cp.spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',windowsHide:true}); c.on('error',e=>console.log('detached denied',e.code)); console.log('PID',c.pid); c.unref();} catch(e) {console.log('detached denied',e.code);}",
         "spawn_burst": "for(let i=0;i<12;i++){const c=cp.spawnSync(process.execPath,['-e','process.exit(0)'],{timeout:2000,stdio:'ignore',windowsHide:true}); console.log('spawn_burst',c.status===0?'exited':('denied '+(c.error?.code||c.status)));} console.log('spawn_burst done');",
     }
     names = random.Random(SEED + scenario).sample(sorted(behaviors), 4)
