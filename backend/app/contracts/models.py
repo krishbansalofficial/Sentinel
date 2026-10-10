@@ -252,7 +252,7 @@ class VerificationResult(ContractModel):
     # Phase 5 (additive): the check run behind this result and the boundary it was
     # observed to run under. None for legacy rows and for a command that never started.
     check_run_id: UUID | None = None
-    boundary: Literal["APPCONTAINER", "UNCONFINED"] | None = None
+    boundary: Literal["APPCONTAINER", "LINUX_SANDBOX", "UNCONFINED"] | None = None
 
 
 class ChangeContract(ContractModel):
@@ -1275,11 +1275,10 @@ class DiffCoverageResult(ContractModel):
     started_at: AwareDatetime
     completed_at: AwareDatetime
     collector_status: ShortText
-    # Phase 5 (additive): APPCONTAINER_IN_PROCESS only when the collection ran in a
-    # verified check box; legacy rows keep UNCONFINED_IN_PROCESS.
-    collection_boundary: Literal["UNCONFINED_IN_PROCESS", "APPCONTAINER_IN_PROCESS"] = (
-        "UNCONFINED_IN_PROCESS"
-    )
+    # Phase 5 (additive): APPCONTAINER_IN_PROCESS / LINUX_SANDBOX_IN_PROCESS only when
+    # the collection ran in a verified check box; legacy rows keep UNCONFINED_IN_PROCESS.
+    collection_boundary: Literal["UNCONFINED_IN_PROCESS", "APPCONTAINER_IN_PROCESS",
+                                 "LINUX_SANDBOX_IN_PROCESS"] = "UNCONFINED_IN_PROCESS"
     collection_caveat: str = (
         "Tests and coverage share a process at user authority; agent-authored code can influence coverage data."
     )
@@ -1298,7 +1297,7 @@ class DiffCoverageResult(ContractModel):
     policy_version: ShortText | None = None
     gate_satisfied: bool | None = None
     check_run_id: UUID | None = None
-    boundary: Literal["APPCONTAINER", "UNCONFINED"] | None = None
+    boundary: Literal["APPCONTAINER", "LINUX_SANDBOX", "UNCONFINED"] | None = None
 
 
 class PassportV2LaunchBinding(ContractModel):
@@ -1365,12 +1364,14 @@ class PassportV2Payload(ContractModel):
     policy_denials: list[ShortText] = Field(default_factory=list, max_length=16)
     product_version: ShortText | None = None
     # Phase 5 (additive): PASS only when every check run of the Change (verification
-    # and diff-coverage runs) ran in a verified AppContainer box; FAIL if any was
+    # and diff-coverage runs) ran in a verified box (AppContainer, or the Linux
+    # sandbox on Linux); FAIL if any was
     # UNCONFINED or failed verification; UNKNOWN when none ran or the records
     # cannot establish it.
     confined_checks: Literal["PASS", "FAIL", "UNKNOWN"] = "UNKNOWN"
     # Phase 5 (additive, D2): each check run of the Change and the boundary it was
-    # observed to run under (APPCONTAINER only when verified; None otherwise).
+    # observed to run under (APPCONTAINER or LINUX_SANDBOX only when verified;
+    # None otherwise).
     check_runs: list[PassportV2CheckRun] = Field(default_factory=list, max_length=1024)
     # Additive: each launch of the Change and its observed boundary; the
     # ``execution_boundary`` claim is the weakest of these.
@@ -1573,18 +1574,38 @@ class WorkspaceSweepReport(ContractModel):
     failed: list[WorkspaceSweepFailure] = Field(default_factory=list, max_length=10000)
 
 
+class LinuxSandboxCheckFacts(ContractModel):
+    """What was verified on a Linux check box's live process before it ran (additive).
+
+    A summary of the recorded facts: which namespaces were separate from the
+    supervisor's, the seccomp mode and how many filters the sandbox added,
+    ``no_new_privs``, the run cgroup and whether the network was isolated.
+    """
+
+    verified: bool
+    separate_namespaces: list[ShortText] = Field(default_factory=list, max_length=16)
+    seccomp_mode: ShortText | None = None
+    seccomp_filters_added: int | None = None
+    no_new_privs: bool
+    cgroup: ShortText | None = None
+    network_isolated: bool
+
+
 class CheckRunView(ContractModel):
     """One check run of a Change and the boundary it was observed to run under.
 
     ``boundary`` is APPCONTAINER only for a box run whose live token and Job
-    Object were verified before it ran; UNCONFINED for a delegated opt-in run;
-    None when no verified run is recorded. No argv text and no output.
+    Object were verified before it ran, LINUX_SANDBOX only for a Linux box run
+    whose namespaces, seccomp filter and cgroup were verified before it ran;
+    UNCONFINED for a delegated opt-in run; None when no verified run is
+    recorded. ``token`` holds AppContainer facts, ``linux_sandbox`` Linux
+    facts. No argv text and no output.
     """
 
     id: UUID
     change_id: UUID
     state: ShortText
-    boundary: Literal["APPCONTAINER", "UNCONFINED"] | None = None
+    boundary: Literal["APPCONTAINER", "LINUX_SANDBOX", "UNCONFINED"] | None = None
     network: bool | None = None
     tree_digest: ShortText | None = None
     runtime_manifest_digests: list[ShortText] = Field(default_factory=list, max_length=64)
@@ -1593,6 +1614,7 @@ class CheckRunView(ContractModel):
     token: AppContainerBoundary | None = None
     created_at: AwareDatetime | None = None
     updated_at: AwareDatetime | None = None
+    linux_sandbox: LinuxSandboxCheckFacts | None = None
 
 
 class CheckRunListResponse(ContractModel):
@@ -1603,13 +1625,13 @@ class CheckRunListResponse(ContractModel):
 class PassportV2CheckRun(ContractModel):
     """One check run bound into a Passport v2 and its observed boundary (Phase 5, D2).
 
-    ``boundary`` is APPCONTAINER only for a box run whose row and hash-verified
-    journal facts verify, UNCONFINED for a delegated opt-in run, and None when
-    the records cannot establish a boundary.
+    ``boundary`` is the box's own (APPCONTAINER or LINUX_SANDBOX) only for a box
+    run whose row and hash-verified journal facts verify, UNCONFINED for a
+    delegated opt-in run, and None when the records cannot establish a boundary.
     """
 
     check_run_id: UUID
-    boundary: Literal["APPCONTAINER", "UNCONFINED"] | None = None
+    boundary: Literal["APPCONTAINER", "LINUX_SANDBOX", "UNCONFINED"] | None = None
 
 
 PassportV2Payload.model_rebuild()

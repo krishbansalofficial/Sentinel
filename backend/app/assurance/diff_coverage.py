@@ -28,6 +28,9 @@ from backend.app.execution.commands import check_boxes_unavailable
 from backend.app.git.state import GitStateTracker
 
 ARTIFACT_LIMIT = 8_388_608
+# Verified box boundary -> where test collection ran (anything else: unconfined).
+_COLLECTION_BOUNDARIES = {"APPCONTAINER": "APPCONTAINER_IN_PROCESS",
+                          "LINUX_SANDBOX": "LINUX_SANDBOX_IN_PROCESS"}
 _PYTHON_EXECUTABLE = re.compile(r"python(?:3(?:\.\d+)?)?w?(?:\.exe)?$", re.I)
 
 
@@ -378,7 +381,7 @@ def collect_diff_coverage(
         policy_version=request.rule.policy_version,
         collection_caveat=(
             "Tests and coverage share one process inside a disposable Sentinel check box "
-            "(AppContainer, no network, a copy of the tracked and untracked files); "
+            "(no network, a copy of the tracked and untracked files); "
             "agent-authored code can still influence coverage data. The external Python "
             "interpreter is trusted by path, not by a verified publisher or binary digest."
         ),
@@ -455,14 +458,27 @@ def collect_diff_coverage(
             boundary = verified_boundary(run)
             result = result.model_copy(update={
                 "check_run_id": run.check_run_id, "boundary": boundary,
-                "collection_boundary": ("APPCONTAINER_IN_PROCESS"
-                                        if boundary == "APPCONTAINER"
-                                        else "UNCONFINED_IN_PROCESS")})
-            if boundary != "APPCONTAINER":
-                # Never sign an AppContainer caveat the token facts did not verify.
+                "collection_boundary": _COLLECTION_BOUNDARIES.get(
+                    boundary, "UNCONFINED_IN_PROCESS")})
+            if boundary == "APPCONTAINER":
+                result = result.model_copy(update={"collection_caveat": (
+                    "Tests and coverage share one process inside a disposable Sentinel check "
+                    "box (AppContainer, no network, a copy of the tracked and untracked "
+                    "files); agent-authored code can still influence coverage data. The "
+                    "external Python interpreter is trusted by path, not by a verified "
+                    "publisher or binary digest.")})
+            elif boundary == "LINUX_SANDBOX":
+                result = result.model_copy(update={"collection_caveat": (
+                    "Tests and coverage share one process inside a disposable Sentinel check "
+                    "box (Linux sandbox: separate namespaces, a seccomp filter, no network, a "
+                    "copy of the tracked and untracked files); agent-authored code can still "
+                    "influence coverage data. The external Python interpreter is trusted by "
+                    "path and bound read-only, not verified by publisher or binary digest.")})
+            elif boundary != "APPCONTAINER":
+                # Never sign a box caveat the boundary facts did not verify.
                 result = result.model_copy(update={"collection_caveat": (
                     "Tests and coverage share one process in a Sentinel check box whose "
-                    "AppContainer boundary was not verified; agent-authored code can still "
+                    "boundary was not verified; agent-authored code can still "
                     "influence coverage data. The external Python interpreter is trusted by "
                     "path, not by a verified publisher or binary digest.")})
             if on_check_run is not None:

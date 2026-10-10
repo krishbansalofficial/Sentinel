@@ -2134,13 +2134,14 @@
       },
       "CheckRunView": {
         "additionalProperties": false,
-        "description": "One check run of a Change and the boundary it was observed to run under.\n\n``boundary`` is APPCONTAINER only for a box run whose live token and Job\nObject were verified before it ran; UNCONFINED for a delegated opt-in run;\nNone when no verified run is recorded. No argv text and no output.",
+        "description": "One check run of a Change and the boundary it was observed to run under.\n\n``boundary`` is APPCONTAINER only for a box run whose live token and Job\nObject were verified before it ran, LINUX_SANDBOX only for a Linux box run\nwhose namespaces, seccomp filter and cgroup were verified before it ran;\nUNCONFINED for a delegated opt-in run; None when no verified run is\nrecorded. ``token`` holds AppContainer facts, ``linux_sandbox`` Linux\nfacts. No argv text and no output.",
         "properties": {
           "boundary": {
             "anyOf": [
               {
                 "enum": [
                   "APPCONTAINER",
+                  "LINUX_SANDBOX",
                   "UNCONFINED"
                 ],
                 "type": "string"
@@ -2183,6 +2184,16 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "linux_sandbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinuxSandboxCheckFacts"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "network": {
             "anyOf": [
@@ -2978,6 +2989,7 @@
               {
                 "enum": [
                   "APPCONTAINER",
+                  "LINUX_SANDBOX",
                   "UNCONFINED"
                 ],
                 "type": "string"
@@ -3036,7 +3048,8 @@
             "default": "UNCONFINED_IN_PROCESS",
             "enum": [
               "UNCONFINED_IN_PROCESS",
-              "APPCONTAINER_IN_PROCESS"
+              "APPCONTAINER_IN_PROCESS",
+              "LINUX_SANDBOX_IN_PROCESS"
             ],
             "title": "Collection Boundary",
             "type": "string"
@@ -4800,6 +4813,78 @@
         "title": "JournalEventType",
         "type": "string"
       },
+      "LinuxSandboxCheckFacts": {
+        "additionalProperties": false,
+        "description": "What was verified on a Linux check box's live process before it ran (additive).\n\nA summary of the recorded facts: which namespaces were separate from the\nsupervisor's, the seccomp mode and how many filters the sandbox added,\n``no_new_privs``, the run cgroup and whether the network was isolated.",
+        "properties": {
+          "cgroup": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cgroup"
+          },
+          "network_isolated": {
+            "title": "Network Isolated",
+            "type": "boolean"
+          },
+          "no_new_privs": {
+            "title": "No New Privs",
+            "type": "boolean"
+          },
+          "seccomp_filters_added": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seccomp Filters Added"
+          },
+          "seccomp_mode": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seccomp Mode"
+          },
+          "separate_namespaces": {
+            "items": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Separate Namespaces",
+            "type": "array"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verified",
+          "no_new_privs",
+          "network_isolated"
+        ],
+        "title": "LinuxSandboxCheckFacts",
+        "type": "object"
+      },
       "Outcome": {
         "additionalProperties": false,
         "properties": {
@@ -4936,13 +5021,14 @@
       },
       "PassportV2CheckRun": {
         "additionalProperties": false,
-        "description": "One check run bound into a Passport v2 and its observed boundary (Phase 5, D2).\n\n``boundary`` is APPCONTAINER only for a box run whose row and hash-verified\njournal facts verify, UNCONFINED for a delegated opt-in run, and None when\nthe records cannot establish a boundary.",
+        "description": "One check run bound into a Passport v2 and its observed boundary (Phase 5, D2).\n\n``boundary`` is the box's own (APPCONTAINER or LINUX_SANDBOX) only for a box\nrun whose row and hash-verified journal facts verify, UNCONFINED for a\ndelegated opt-in run, and None when the records cannot establish a boundary.",
         "properties": {
           "boundary": {
             "anyOf": [
               {
                 "enum": [
                   "APPCONTAINER",
+                  "LINUX_SANDBOX",
                   "UNCONFINED"
                 ],
                 "type": "string"
@@ -6731,6 +6817,7 @@
               {
                 "enum": [
                   "APPCONTAINER",
+                  "LINUX_SANDBOX",
                   "UNCONFINED"
                 ],
                 "type": "string"

@@ -70,6 +70,10 @@ from backend.app.evals.store import EvalStore
 from backend.app.core.metrics import render_metrics
 from backend.app.workspace.profiles import LinuxWorkspaceProfiles
 from backend.app.execution.check_box import CheckBoxes
+from backend.app.execution.linux_check_box import (
+    linux_box_platform,
+    linux_resolve_check_runtime,
+)
 from backend.app.execution.check_repository import CheckRunRepository
 from backend.app.execution.launcher import AgentLauncher
 from backend.app.execution.signature import check_signature
@@ -128,6 +132,15 @@ _DEFAULT_CONFIGURED_CAPABILITIES = {
     "tool_registry",
     "linux_sandbox",
 }
+
+
+def _check_box_layer(store_directory) -> dict[str, object]:
+    """``CheckBoxes`` keyword arguments for this platform (empty: the Windows layer)."""
+
+    if not sys.platform.startswith("linux"):
+        return {}
+    return {"platform": linux_box_platform(store_directory),
+            "resolver": partial(linux_resolve_check_runtime, protected=(store_directory,))}
 
 
 def create_app(
@@ -202,9 +215,13 @@ def create_app(
         profiles=workspace_profiles,
     )
     # Phase 5: per-run confined check boxes. Verification, assurance checks and
-    # diff-coverage collection all run in them (05-03).
+    # diff-coverage collection all run in them (05-03). The box layer per platform,
+    # chosen explicitly: AppContainer profiles on Windows, the verified Linux
+    # sandbox on Linux (runtimes bound read-only, never the store); any other
+    # platform keeps the Windows layer, which refuses to open a box.
     check_boxes = CheckBoxes(database, journal=journal,
-                             evidence_guard=workspace_manager.unapplied_work)
+                             evidence_guard=workspace_manager.unapplied_work,
+                             **_check_box_layer(resolved_settings.database_path.parent))
     # claude resolves to the AppContainer profile: it launches only inside
     # this manager's workspace, with the broker's staged credential.
     agent_launcher = AgentLauncher(

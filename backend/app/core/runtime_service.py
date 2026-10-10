@@ -25,6 +25,7 @@ from backend.app.contracts.models import (
     ActorCreateRequest,
     ActorListResponse,
     AppContainerBoundary,
+    LinuxSandboxCheckFacts,
     ChangePassport,
     CheckRunListResponse,
     CheckRunView,
@@ -72,12 +73,14 @@ from backend.app.core.runtime_repositories import (
 from backend.app.core.evidence_runtime import EvidenceAdminService
 from backend.app.credentials.broker import CredentialBroker
 from backend.app.execution.check_repository import (
-    BOUNDARY_APPCONTAINER,
+    BOUNDARY_LINUX_SANDBOX,
     BOUNDARY_UNCONFINED,
     UNCONFINED_RUN_EVENT,
     CheckRunRepository,
     check_run_fact,
+    record_boundary,
 )
+from backend.app.execution.linux_sandbox import NAMESPACES, verified_linux_facts
 from backend.app.identity.errors import (
     actor_not_found,
     delegation_not_found,
@@ -729,13 +732,46 @@ class PassportService:
         return self._signing.public_key()
 
 
+def _linux_check_facts(facts: Mapping[str, Any]) -> LinuxSandboxCheckFacts | None:
+    """A display summary of recorded Linux facts; None when they are not Linux facts.
+
+    Only a summary: whether they verify is decided by ``check_run_fact``, and
+    ``boundary`` is the field that claims it.
+    """
+
+    if facts.get("sandbox_kind") != "linux_sandbox":
+        return None
+    namespaces, host = facts.get("namespaces"), facts.get("host_namespaces")
+    separate = ([name for name in NAMESPACES
+                 if namespaces.get(name) and namespaces.get(name) != host.get(name)]
+                if isinstance(namespaces, Mapping) and isinstance(host, Mapping) else [])
+    try:
+        added = int(facts.get("seccomp_filters")) - int(facts.get("supervisor_seccomp_filters"))
+    except (TypeError, ValueError):
+        added = None
+    mode, cgroup = facts.get("seccomp_mode"), facts.get("cgroup")
+    try:
+        return LinuxSandboxCheckFacts(
+            verified=verified_linux_facts(facts),
+            separate_namespaces=separate,
+            seccomp_mode=mode if isinstance(mode, str) and mode else None,
+            seccomp_filters_added=added,
+            no_new_privs=facts.get("no_new_privs") == "1",
+            cgroup=cgroup if isinstance(cgroup, str) and cgroup else None,
+            network_isolated=facts.get("network_isolated") is True,
+        )
+    except ValueError:
+        return None
+
+
 class CheckRunService:
     """Read-only view of a Change's check runs and the boundary each ran under.
 
     Box runs come from ``check_runs`` rows; delegated unconfined runs have no row
     and come from their ``check.unconfined_run`` journal event. A row reads
-    APPCONTAINER only when its row and journal facts verify (``check_run_fact``).
-    No argv text and no output are exposed.
+    its box's boundary (APPCONTAINER or LINUX_SANDBOX) only when its row and
+    journal facts verify (``check_run_fact``). No argv text and no output are
+    exposed.
     """
 
     def __init__(self, repository: CheckRunRepository, change_service: ChangeService) -> None:
@@ -750,22 +786,26 @@ class CheckRunService:
         by_id = {record.id: record for record in records}
         items: list[CheckRunView] = []
         for record in records:
-            state, _reason = check_run_fact(record.id, BOUNDARY_APPCONTAINER,
-                                            records=by_id, events=events)
+            claimed = record_boundary(record)
+            state, _reason = check_run_fact(record.id, claimed, records=by_id, events=events)
             token = None
-            if record.facts is not None:
+            linux = None
+            if record.facts is not None and claimed == BOUNDARY_LINUX_SANDBOX:
+                linux = _linux_check_facts(record.facts)
+            elif record.facts is not None:
                 try:
                     token = AppContainerBoundary.model_validate(record.facts)
                 except ValueError:
                     token = None
             items.append(CheckRunView(
                 id=record.id, change_id=record.change_id, state=record.state.value,
-                boundary=BOUNDARY_APPCONTAINER if state == "PASS" else None,
+                boundary=claimed if state == "PASS" else None,
                 network=record.network, tree_digest=record.tree_digest,
                 runtime_manifest_digests=[grant.manifest_digest
                                           for grant in record.runtime_grants],
                 exit_code=record.exit_code, timed_out=record.timed_out, token=token,
                 created_at=record.created_at, updated_at=record.updated_at,
+                linux_sandbox=linux,
             ))
         # One item per unconfined run: its intent event (journaled before it ran)
         # and its outcome event share a check_run_id; the latest one describes it.
