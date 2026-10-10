@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { assuranceEvaluationQuery, assuranceFactsQuery, assurancePlanQuery, createAssurancePlan, runAssurancePlan } from "@/services/actions";
 import { changeKeys } from "@/services/changes";
 import { useActors } from "@/features/authority/useActors";
+import { CheckRunsSection } from "@/features/checks/CheckRunsSection";
 
 const isMissing = (e: unknown) => e instanceof ApiError && e.kind === "not_found";
 const yesNo = (ok: boolean): { label: string; tone: "ok" | "warn" } => (ok ? { label: "Yes", tone: "ok" } : { label: "No", tone: "warn" });
@@ -76,6 +77,7 @@ export function AssuranceTab() {
           )}
         </>
       )}
+      <CheckRunsSection changeId={changeId} />
       <p className="text-xs leading-5 text-muted-foreground">Passing checks are evidence for one Git state, not proof the change is correct. Checks that can't run or were skipped are shown as such rather than as passes.</p>
     </>
   );

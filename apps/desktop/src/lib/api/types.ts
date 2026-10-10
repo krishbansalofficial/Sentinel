@@ -83,3 +83,7 @@ export type PolicyPresetEvaluation = S["PolicyPresetEvaluation"];
 export type RepositoryContractLoadResult = S["RepositoryContractLoadResult"];
 export type PassportV2Issued = S["PassportV2Issued"];
 export type PassportV2Payload = S["PassportV2Payload"];
+export type CheckRunView = S["CheckRunView"];
+export type CheckRunListResponse = S["CheckRunListResponse"];
+export type LinuxSandboxCheckFacts = S["LinuxSandboxCheckFacts"];
+export type PassportV2CheckRun = S["PassportV2CheckRun"];

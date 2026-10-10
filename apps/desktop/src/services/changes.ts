@@ -2,6 +2,7 @@ import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { http, newIdempotencyKey } from "../lib/api";
 import type {
   ChangeCreateRequest,
+  CheckRunListResponse,
   ChangeListResponse,
   ChangeView,
   EvidenceOverview,
@@ -16,6 +17,7 @@ export const changeKeys = {
   detail: (id: string) => [...changeKeys.all, "detail", id] as const,
   evidence: (id: string) => [...changeKeys.all, "evidence", id] as const,
   events: (id: string) => [...changeKeys.all, "events", id] as const,
+  checks: (id: string) => [...changeKeys.all, "checks", id] as const,
 };
 
 export const PAGE_SIZE = 50;
@@ -53,6 +55,14 @@ export const evidenceQuery = (id: string) =>
     queryKey: changeKeys.evidence(id),
     queryFn: ({ signal }) =>
       http.get<EvidenceOverview>(`/api/v1/changes/${encodeURIComponent(id)}/evidence`, { signal }),
+  });
+
+/** Every check run of a Change and the boundary each was observed to run under (no argv, no output). */
+export const checkRunsQuery = (id: string) =>
+  queryOptions({
+    queryKey: changeKeys.checks(id),
+    queryFn: ({ signal }) =>
+      http.get<CheckRunListResponse>(`/api/v1/changes/${encodeURIComponent(id)}/checks`, { signal }),
   });
 
 export const EVENT_PAGE_SIZE = 100;

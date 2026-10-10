@@ -12,6 +12,7 @@ import { evidenceInfo, formatRelative, formatTime, lifecycleInfo, recoveryInfo, 
 import { buildPassport, exportSignedPassport, issuePassportV2, passportQuery } from "@/services/actions";
 import type { PassportV2Issued } from "@/lib/api/types";
 import { boundaryClaimInfo } from "./v2";
+import { checkBoundaryInfo } from "@/features/checks/checks";
 import { signingKeyQuery } from "@/services/system";
 
 /** "Trace verified" is the honest reading of a verified hash chain; a passport doesn't prove the change is correct. */
@@ -179,6 +180,22 @@ function PassportV2Section({ changeId }: { changeId: string }) {
                     <td className={`${td} mono break-all`}>{l.package_sid ?? "—"}</td>
                   </tr>
                 ))}
+              </tbody>
+            </DataTable>
+          ) : null}
+          {claims.check_runs?.length ? (
+            <DataTable label="Check runs">
+              <thead><tr><th className={th}>Check run</th><th className={th}>Boundary</th></tr></thead>
+              <tbody>
+                {claims.check_runs.map((c) => {
+                  const info = checkBoundaryInfo(c.boundary);
+                  return (
+                    <tr key={c.check_run_id}>
+                      <td className={`${td} mono`} title={c.check_run_id}>{c.check_run_id.slice(0, 8)}</td>
+                      <td className={td}><span title={info.detail}><StatusLabel status={info} /></span></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </DataTable>
           ) : null}
