@@ -18,6 +18,7 @@ from uuid import UUID
 
 from backend.app.core.database import Database
 from backend.app.core.errors import AppError
+from backend.app.execution.linux_sandbox import LINUX_IDENTITY_PREFIX, verified_linux_facts
 
 
 class CheckRunState(StrEnum):
@@ -197,14 +198,18 @@ class CheckRunRepository:
 #
 # Phase 5 (05-04): the observed boundary of a check run, and the Change-level
 # ``confined_checks`` fact. A run counts as confined only when BOTH its row and
-# every journaled ``check.confined_run`` event for it carry verified token facts
-# (AppContainer token, Job Object verified before resume). Anything absent,
-# mixed or unverifiable is UNKNOWN or FAIL, never PASS.
+# every journaled ``check.confined_run`` event for it carry verified facts of the
+# box's own kind: an AppContainer token whose Job Object was verified before
+# resume, or (a ``linux-sandbox:`` box) Linux sandbox facts that
+# ``verified_linux_facts`` accepts. Anything absent, mixed or unverifiable is
+# UNKNOWN or FAIL, never PASS; one kind never vouches for the other.
 
 CONFINED_RUN_EVENT = "check.confined_run"
 UNCONFINED_RUN_EVENT = "check.unconfined_run"
 BOUNDARY_APPCONTAINER = "APPCONTAINER"
+BOUNDARY_LINUX_SANDBOX = "LINUX_SANDBOX"
 BOUNDARY_UNCONFINED = "UNCONFINED"
+BOX_BOUNDARIES = frozenset({BOUNDARY_APPCONTAINER, BOUNDARY_LINUX_SANDBOX})
 
 Fact = Literal["PASS", "FAIL", "UNKNOWN"]
 
@@ -237,6 +242,22 @@ def verified_token_facts(facts: Mapping[str, Any] | None) -> bool:
             and facts.get("job_verified") is True)
 
 
+def record_boundary(record: CheckRunRecord) -> str:
+    """The box boundary a row's identity stands for: never inferred from its facts."""
+
+    return (BOUNDARY_LINUX_SANDBOX if record.package_sid.startswith(LINUX_IDENTITY_PREFIX)
+            else BOUNDARY_APPCONTAINER)
+
+
+def _verified_box_facts(boundary: str, facts: Any, *, network: bool) -> bool:
+    """The facts verify for ``boundary``; Linux facts must also match the box's network."""
+
+    if boundary == BOUNDARY_APPCONTAINER:
+        return verified_token_facts(facts)
+    return (isinstance(facts, Mapping) and verified_linux_facts(facts)
+            and facts.get("network_isolated") is (not network))
+
+
 def _run_events(run_id: UUID, events: Sequence[CheckRunEvent]) -> list[CheckRunEvent]:
     key = str(run_id)
     return [event for event in events
@@ -248,7 +269,12 @@ def check_run_fact(
     run_id: UUID | None, claimed: str | None, *,
     records: Mapping[UUID, CheckRunRecord], events: Sequence[CheckRunEvent],
 ) -> tuple[Fact, str | None]:
-    """Classify one check run behind a piece of evidence; the reason explains non-PASS."""
+    """Classify one check run behind a piece of evidence; the reason explains non-PASS.
+
+    ``claimed`` must be the boundary the run's own row stands for
+    (``record_boundary``): an APPCONTAINER claim on a Linux box, or the
+    reverse, is FAIL however its facts look.
+    """
 
     if run_id is None or claimed is None:
         return "UNKNOWN", "the evidence records no check run or boundary"
@@ -256,23 +282,27 @@ def check_run_fact(
     if claimed == BOUNDARY_UNCONFINED or any(
             event.event_type == UNCONFINED_RUN_EVENT for event in mine):
         return "FAIL", "a check ran UNCONFINED (delegated checks.unconfined opt-in)"
-    if claimed != BOUNDARY_APPCONTAINER:
+    if claimed not in BOX_BOUNDARIES:
         return "UNKNOWN", "the evidence names an unrecognized check boundary"
     record = records.get(run_id)
     confined = [event for event in mine if event.event_type == CONFINED_RUN_EVENT]
     if record is None or not confined:
         return "UNKNOWN", "the check run record or its journal event is missing"
+    if record_boundary(record) != claimed:
+        return "FAIL", "the claimed check boundary is not the boundary of the check box"
     if record.facts is None:
         return "UNKNOWN", "the check run recorded no verified launch"
-    if not verified_token_facts(record.facts):
+    if not _verified_box_facts(claimed, record.facts, network=record.network):
         return "FAIL", "the check run's boundary verification failed"
     for event in confined:
         payload = event.payload
         if (payload is None or event.subject_id != str(run_id)
                 or payload.get("check_run_id") != str(run_id)
-                or payload.get("boundary") != BOUNDARY_APPCONTAINER
+                or payload.get("boundary") != claimed
                 or payload.get("package_sid") != record.package_sid
-                or not verified_token_facts(payload)):
+                or not _verified_box_facts(
+                    claimed, payload if claimed == BOUNDARY_APPCONTAINER
+                    else payload.get("linux_sandbox"), network=record.network)):
             return "FAIL", "a journaled check run failed boundary verification"
     return "PASS", None
 
@@ -287,9 +317,9 @@ def change_check_runs_fact(
     event names. PASS only when at least one run exists and every run is a box
     run whose row and hash-verified journal events verify (``check_run_fact``);
     FAIL on any unconfined run or any failed/unverified boundary fact; UNKNOWN
-    when no run exists or a run's facts are missing. Each run's boundary is
-    APPCONTAINER only for a verified box run, UNCONFINED for a delegated
-    opt-in run, and None otherwise.
+    when no run exists or a run's facts are missing. Each run's boundary is its
+    box's own (APPCONTAINER or LINUX_SANDBOX) only for a verified box run,
+    UNCONFINED for a delegated opt-in run, and None otherwise.
     """
 
     ordered: dict[UUID, None] = {}
@@ -315,9 +345,10 @@ def change_check_runs_fact(
             runs.append((run_id, BOUNDARY_UNCONFINED))
             results.append(("FAIL", "a check ran UNCONFINED (delegated checks.unconfined opt-in)"))
             continue
-        state, reason = check_run_fact(run_id, BOUNDARY_APPCONTAINER, records=records,
-                                       events=events)
-        runs.append((run_id, BOUNDARY_APPCONTAINER if state == "PASS" else None))
+        record = records.get(run_id)
+        claimed = record_boundary(record) if record is not None else BOUNDARY_APPCONTAINER
+        state, reason = check_run_fact(run_id, claimed, records=records, events=events)
+        runs.append((run_id, claimed if state == "PASS" else None))
         results.append((state, reason))
     if not runs:
         return "UNKNOWN", "no check run of this Change is recorded", runs

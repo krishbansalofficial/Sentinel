@@ -59,6 +59,8 @@ SHIM = 'read -r _sentinel_go || exit 125; exec "$@" </dev/null'
 SHIM_NAME = "sentinel-shim"
 SANDBOX_HOSTNAME = "sentinel-sandbox"
 VERIFY_TIMEOUT_SECONDS = 10.0
+# The identity a Linux workspace or check box records in place of a package SID.
+LINUX_IDENTITY_PREFIX = "linux-sandbox:"
 _ETC_FILES = (
     "/etc/ssl", "/etc/ca-certificates", "/etc/pki", "/etc/resolv.conf", "/etc/hosts",
     "/etc/nsswitch.conf", "/etc/passwd", "/etc/group", "/etc/localtime",
@@ -171,11 +173,15 @@ class SandboxSpec:
     writable: tuple[Path, ...]  # workspace clone, staged home
     readonly: tuple[Path, ...] = ()  # tool snapshot directories
     network: bool = False
+    # Read-only (source, destination) binds mounted after the writable ones, so a
+    # destination may sit inside a writable bind (node_modules inside a check tree).
+    mounts: tuple[tuple[Path, Path], ...] = ()
 
     def __post_init__(self) -> None:
         if not self.argv or not os.path.isabs(self.argv[0]):
             raise ValueError("the sandboxed executable must be an absolute path")
-        for path in (self.cwd, *self.writable, *self.readonly):
+        for path in (self.cwd, *self.writable, *self.readonly,
+                     *(item for pair in self.mounts for item in pair)):
             if not path.is_absolute():
                 raise ValueError(f"sandbox paths must be absolute: {path}")
         if not any(self.cwd == item or item in self.cwd.parents for item in self.writable):
@@ -209,6 +215,8 @@ def bwrap_arguments(spec: SandboxSpec, *, bwrap: Path, seccomp_fd: int, info_fd:
         arguments += ["--ro-bind", str(path), str(path)]
     for path in spec.writable:
         arguments += ["--bind", str(path), str(path)]
+    for source, destination in spec.mounts:
+        arguments += ["--ro-bind", str(source), str(destination)]
     arguments += ["--chdir", str(spec.cwd), "--clearenv"]
     for key, value in sorted(spec.env.items()):
         arguments += ["--setenv", key, value]

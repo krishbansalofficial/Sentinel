@@ -18,6 +18,12 @@ any row or profile exists. Runs go through ``spawn_appcontainer_supervised``
 (token verified before resume) and the bounded ``_process.capture`` loop the
 agent launcher uses; each run is journaled as ``check.confined_run`` with ids
 and digests only (no argv text, output or host paths).
+
+On Linux the same manager runs over ``linux_check_box`` (``BoxPlatform``
+filled with the verified bubblewrap sandbox): the box is ``linux-sandbox:<name>``,
+its runtimes are read-only binds instead of granted snapshots, and its runs are
+journaled with boundary ``LINUX_SANDBOX`` and the Linux facts verified before
+the command ran. A run is only ever claimed under its own box's boundary.
 """
 
 from __future__ import annotations
@@ -55,6 +61,7 @@ from backend.app.execution.check_repository import (
     CheckRunState,
     RuntimeGrant,
 )
+from backend.app.execution.linux_sandbox import LinuxSandboxFacts, verified_linux_facts
 from backend.app.execution.check_runtime import (
     SITE_PACKAGES_ENV,
     ManifestEntry,
@@ -78,6 +85,7 @@ MAX_CHECK_TIMEOUT_SECONDS = 3600
 GIT_LIST_TIMEOUT_SECONDS = 120
 GIT_LIST_LIMIT = 8 * 1_048_576
 BOUNDARY_APPCONTAINER = "APPCONTAINER"
+BOUNDARY_LINUX_SANDBOX = "LINUX_SANDBOX"
 NETWORK_CAPABILITIES = ("internetClient",)
 _GITLINK_MODE = "160000"
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
@@ -87,6 +95,7 @@ _CHUNK = 1 << 20
 # base_environment owns these; a runtime may never override them.
 _RESERVED_ENV_KEYS = frozenset({
     "SYSTEMROOT", "WINDIR", "COMSPEC", "PATH", "LOCALAPPDATA", "TEMP", "TMP",
+    "HOME", "TMPDIR",
 })
 
 
@@ -127,7 +136,12 @@ def check_output_refused(code: str, reason: str) -> AppError:
 
 @dataclass(frozen=True, slots=True)
 class BoxPlatform:
-    """The Windows operations a box uses; unit tests substitute fakes."""
+    """The platform operations a box uses; unit tests substitute fakes.
+
+    The defaults are the Windows AppContainer layer; ``linux_check_box`` fills
+    the same seam with the Linux sandbox (``runtime_cache=False``: its runtimes
+    are read-only binds, so there is no snapshot cache to sweep).
+    """
 
     derive_package_sid: Callable[[str], str] = appcontainer.derive_package_sid
     ensure_profile: Callable[..., Any] = appcontainer.ensure_profile
@@ -140,6 +154,7 @@ class BoxPlatform:
     grant: Callable[..., None] = acl.grant_package_read
     revoke: Callable[..., None] = acl.revoke_package_read
     remove_tree: Callable[[str | Path], None] = appcontainer.remove_tree_no_follow
+    runtime_cache: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -361,8 +376,13 @@ class CheckBoxes:
         the box sweep could not finish) are kept: they may still carry a grant.
         """
 
-        from backend.app.execution.check_runtime import sweep_runtime_cache
+        from backend.app.execution.check_runtime import (
+            RuntimeCacheSweepReport,
+            sweep_runtime_cache,
+        )
 
+        if not self._platform.runtime_cache:
+            return RuntimeCacheSweepReport()
         in_use = [grant.path for record in self.repository.list_unclean()
                   for grant in record.runtime_grants]
         return sweep_runtime_cache(self._runtime_root, in_use=in_use)
@@ -467,12 +487,36 @@ class CheckBoxes:
 # ---------------------------------------------------------------------- runtime
 
 
+def _plain_name(name: str) -> bool:
+    return bool(name) and not any(char in name for char in "/\\:\0") and name not in (".", "..")
+
+
+@dataclass(frozen=True, slots=True)
+class ReadonlyBind:
+    """A host directory a Linux box sees read-only (its runtime; never granted, never copied).
+
+    At ``source`` itself, or at ``tree/<tree_relative>`` (one plain name) when
+    the runtime must appear inside the check tree (a project's node_modules).
+    """
+
+    source: Path
+    tree_relative: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "source", Path(self.source))
+        if not self.source.is_absolute():
+            raise ValueError(f"a read-only bind source must be absolute: {self.source}")
+        if self.tree_relative is not None and not _plain_name(self.tree_relative):
+            raise ValueError(f"a tree bind must be one plain name: {self.tree_relative!r}")
+
+
 @dataclass(frozen=True, slots=True)
 class BoxRuntime:
     """What a box runs with: cache entries to grant read on, plus extra environment.
 
     ``env`` may not set a key ``base_environment`` owns (PATH, LOCALAPPDATA,
-    TEMP...); ``path_entries`` are prepended to the box PATH.
+    TEMP, HOME...); ``path_entries`` are prepended to the box PATH.
+    ``readonly_binds`` are the Linux box's runtime (Windows uses ``snapshots``).
     """
 
     snapshots: tuple[RuntimeSnapshot, ...] = ()
@@ -483,6 +527,7 @@ class BoxRuntime:
     # name -> subfolder of the box's scratch: created per box, the variable is set
     # to its absolute path (tool caches that must be writable inside the box).
     scratch_env: Mapping[str, str] = field(default_factory=dict)
+    readonly_binds: tuple[ReadonlyBind, ...] = ()
 
     def __post_init__(self) -> None:
         reserved = [key for key in (*self.env, *self.scratch_env)
@@ -490,12 +535,12 @@ class BoxRuntime:
         if reserved:
             raise ValueError(f"a box runtime may not set {sorted(reserved)}")
         for folder in self.scratch_env.values():
-            if (not folder or "/" in folder or "\\" in folder or ":" in folder
-                    or folder in (".", "..")):
+            if not _plain_name(folder):
                 raise ValueError(f"a scratch folder must be one plain name: {folder!r}")
         object.__setattr__(self, "env", MappingProxyType(dict(self.env)))
         object.__setattr__(self, "scratch_env", MappingProxyType(dict(self.scratch_env)))
         object.__setattr__(self, "snapshots", tuple(self.snapshots))
+        object.__setattr__(self, "readonly_binds", tuple(self.readonly_binds))
         object.__setattr__(self, "path_entries", tuple(Path(p) for p in self.path_entries))
 
 
@@ -857,7 +902,7 @@ class CheckRunFacts:
     stderr: bytes
     truncated: bool
     stdout_digest: str
-    appcontainer: appcontainer.AppContainerFacts
+    appcontainer: appcontainer.AppContainerFacts | None  # None for a Linux sandbox run
     capabilities: tuple[str, ...]
     network: bool
     argv_sha256: str
@@ -865,20 +910,31 @@ class CheckRunFacts:
     duration_ms: int
     boundary: str = BOUNDARY_APPCONTAINER
     incomplete: bool = False
+    linux_sandbox: LinuxSandboxFacts | None = None
 
 
 def verified_boundary(facts: CheckRunFacts) -> str | None:
-    """The boundary to report for a box run: APPCONTAINER only for verified token facts.
+    """The boundary to report for a box run: only the one its own facts verify.
 
-    Production launches are refused before resume unless the token verifies, so
-    this is None only for a test layer (or a regression) whose facts do not
-    verify; a contract field must then not claim the box boundary.
+    APPCONTAINER only for verified token facts; LINUX_SANDBOX only for Linux
+    facts that ``verified_linux_facts`` accepts (re-judged from the payload, not
+    trusted from the ``verified`` flag alone). Production launches are refused
+    before the command runs unless the boundary verifies, so this is None only
+    for a test layer (or a regression); a contract field must then not claim a
+    box boundary. The two kinds never vouch for each other.
     """
 
-    token = facts.appcontainer
-    if (facts.boundary == BOUNDARY_APPCONTAINER and token.is_appcontainer is True
-            and token.job_verified is True):
-        return BOUNDARY_APPCONTAINER
+    if facts.boundary == BOUNDARY_APPCONTAINER:
+        token = facts.appcontainer
+        if (token is not None and facts.linux_sandbox is None
+                and token.is_appcontainer is True and token.job_verified is True):
+            return BOUNDARY_APPCONTAINER
+    elif facts.boundary == BOUNDARY_LINUX_SANDBOX:
+        linux = facts.linux_sandbox
+        if (linux is not None and facts.appcontainer is None
+                and linux.network_isolated is (not facts.network)
+                and verified_linux_facts(linux.to_payload())):
+            return BOUNDARY_LINUX_SANDBOX
     return None
 
 
@@ -967,15 +1023,17 @@ class CheckBox:
             target.mkdir(exist_ok=True)
             env[name] = str(target)
         capabilities = self.capabilities
+        binds = self._readonly_binds()
         record = boxes._save(self._record, self._record.state, state=CheckRunState.RUNNING)
         self._record = record
         spawned: list[Any] = []
 
         def factory(command, cwd, environment):
+            extra = {"readonly_binds": binds} if binds else {}
             process = platform.spawn(
                 command, cwd=cwd, env=environment, redact=lambda text: text,
                 profile_name=record.profile_name, expected_package_sid=record.package_sid,
-                capabilities=capabilities,
+                capabilities=capabilities, **extra,
             )
             spawned.append(process)
             return process
@@ -994,17 +1052,15 @@ class CheckBox:
                                        timed_out=None)
             raise
         duration_ms = int((time.monotonic() - started) * 1000)
-        facts: appcontainer.AppContainerFacts = spawned[0].appcontainer
+        process = spawned[0]
+        linux: LinuxSandboxFacts | None = getattr(process, "linux_sandbox", None)
+        token: appcontainer.AppContainerFacts | None = (
+            None if linux is not None else getattr(process, "appcontainer", None))
         digest = argv_digest(arguments)
-        payload = {
+        payload: dict[str, Any] = {
             "check_run_id": str(record.id),
             "profile_name": record.profile_name,
-            "package_sid": facts.package_sid,
-            "is_appcontainer": facts.is_appcontainer,
-            "integrity_rid": f"{facts.integrity_rid:#06x}",
-            "job_verified": facts.job_verified,
             "capabilities": list(capabilities),
-            "capability_sids": list(facts.capability_sids),
             "network": record.network,
             "argv_sha256": digest,
             "tree_manifest_digest": record.tree_digest,
@@ -1012,23 +1068,68 @@ class CheckBox:
                                          for grant in record.runtime_grants],
             "exit_code": result.returncode,
             "timed_out": result.timed_out,
-            "boundary": BOUNDARY_APPCONTAINER,
         }
+        if linux is not None:
+            # The Linux identity is the box's own (``linux-sandbox:<name>``); the
+            # facts were judged on the live process before it was released.
+            boundary = BOUNDARY_LINUX_SANDBOX
+            recorded = linux.to_payload()
+            payload |= {"package_sid": record.package_sid, "boundary": boundary,
+                        "linux_sandbox": recorded}
+        else:
+            if token is None:  # a layer that returned no boundary facts at all
+                self._record = boxes._save(record, CheckRunState.RUNNING,
+                                           state=CheckRunState.FINISHED, exit_code=None,
+                                           timed_out=None)
+                raise appcontainer.verification_failed("facts")
+            boundary = BOUNDARY_APPCONTAINER
+            recorded = token.to_payload()
+            payload |= {
+                "package_sid": token.package_sid,
+                "is_appcontainer": token.is_appcontainer,
+                "integrity_rid": f"{token.integrity_rid:#06x}",
+                "job_verified": token.job_verified,
+                "capability_sids": list(token.capability_sids),
+                "boundary": boundary,
+            }
         self._record = boxes._save(
             record, CheckRunState.RUNNING, state=CheckRunState.FINISHED,
             exit_code=result.returncode, timed_out=result.timed_out,
-            facts=facts.to_payload(), event=JournalEventType.CHECK_CONFINED_RUN,
+            facts=recorded, event=JournalEventType.CHECK_CONFINED_RUN,
             payload=payload,
         )
         return CheckRunFacts(
             check_run_id=record.id, exit_code=result.returncode, timed_out=result.timed_out,
             stdout=result.stdout, stderr=result.stderr,
             truncated=result.truncated or result.incomplete,
-            stdout_digest=result.stdout_digest, appcontainer=facts,
+            stdout_digest=result.stdout_digest, appcontainer=token,
             capabilities=capabilities, network=record.network, argv_sha256=digest,
             tree_digest=str(record.tree_digest), duration_ms=duration_ms,
-            incomplete=result.incomplete,
+            boundary=boundary, incomplete=result.incomplete, linux_sandbox=linux,
         )
+
+    def _readonly_binds(self) -> tuple[tuple[Path, Path], ...]:
+        """The runtime's read-only binds as (source, destination) for this box.
+
+        A tree destination must be absent or a real directory: an earlier run in
+        this box may have replaced it with a link, which is refused rather than
+        mounted over.
+        """
+
+        pairs: list[tuple[Path, Path]] = []
+        for bind in self._runtime.readonly_binds:
+            if bind.tree_relative is None:
+                pairs.append((bind.source, bind.source))
+                continue
+            destination = self.tree / bind.tree_relative
+            if os.path.lexists(destination) and (
+                    _is_reparse(destination) or not destination.is_dir()):
+                raise check_tree_refused(
+                    "CHECK_TREE_REPARSE_POINT",
+                    "a runtime bind destination in the tree is not a plain directory",
+                    bind.tree_relative)
+            pairs.append((bind.source, destination))
+        return tuple(pairs)
 
     # ------------------------------------------------------------------ outputs
 
