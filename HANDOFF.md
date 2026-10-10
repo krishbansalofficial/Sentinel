@@ -8,7 +8,7 @@ Written: 2026-10-03. Status updated 2026-10-09. Read this whole file before touc
 | Phase | State | Where |
 | --- | --- | --- |
 | 0. Boot and test on Linux/macOS | **Done**, pushed | commits `cd1bf89`..`8236ca1` |
-| 1. Verified Linux agent boundary | **Done except Linux check boxes**; CI `linux-sandbox` job green (fork bomb included) | `0811441`..`c70b9e5` |
+| 1. Verified Linux agent boundary | **Done**, including Linux confined check boxes; CI confirmation for this continuation pending | `0811441`..`c70b9e5` |
 | 2. `sentinel eval` | **Done**: stats, suite, runner, drivers, CLI (`run/compare/report`, `--record`), HTML report, 30-task seed suite, backend store + API + journal events | `5e439dc`..`f10f8e2` |
 | 3. Queue and crash recovery | **Done**: queue, pool, fencing, SIGKILL + chaos tests, bench, `eval run --workers/--queue/--resume` | `997406e`, `5ad8598` |
 | 4. Observability | **Done**: optional OTLP spans (`[telemetry]` extra), connected Jaeger trace, `/api/v1/metrics` (hardened: counts only Sentinel's own refusal lines), desktop Eval page with run comparison | `75962e0`, `b00ad7b`, `a934b9f`, `4c6a6e4` |
@@ -17,41 +17,50 @@ Written: 2026-10-03. Status updated 2026-10-09. Read this whole file before touc
 
 Verification for `b00ad7b`..`42aea0a` (2026-10-09): Windows targeted suites (core, evals, policy, launcher, contract, AppContainer fuzz) green after the fixes in those commits; Linux full suite 2024 passed with the only failures being the README count and CI pin tests fixed in `42aea0a`/`b00ad7b` and telemetry tests needing the `[telemetry]` extra (86/86 green with it); desktop typecheck, api:check and 65 unit tests green. Docker is only the Windows dev box's way to reach a Linux kernel for tests; Sentinel never uses Docker at runtime.
 
-### Next: Linux confined check boxes (design worked out 2026-10-09, not yet coded)
-Every consumer of box facts goes through three functions, so the change is contained:
-1. `execution/linux_check_box.py`: a `LinuxBoxPlatform` filling `check_box.BoxPlatform`:
-   `derive_package_sid(name) -> "linux-sandbox:" + name`; `ensure_profile` makes
-   `<store>/linux-checks/Packages/<name>/AC` (0700) and returns an object with
-   `package_sid` and `container_path`; `local_appdata()` returns `<store>/linux-checks`;
-   `grant`/`revoke` are no-ops (read-only binds replace ACLs); `delete_profile` no-op,
-   `profile_exists` = directory exists; `base_environment` gives PATH (runtime entries +
-   `/usr/local/bin:/usr/bin:/bin`), `HOME`/`TMPDIR` in scratch, `LANG`; `spawn(...)` builds a
-   `SandboxSpec` (writable: the box `AC/tree`, `AC/scratch`; read-only: runtime binds;
-   network only if `internetClient` in capabilities) in a new run cgroup and returns the
-   `LinuxSandboxProcess` (it has `.linux_sandbox` facts).
-2. A Linux resolver (`linux_resolve_check_runtime`) instead of snapshots: python binds the
-   interpreter's venv and base prefix read-only (`pyvenv.cfg` `home` gives the base); node binds
-   its prefix and the repo's `node_modules` onto `tree/node_modules` (add `SandboxSpec.mounts`
-   with explicit destinations); go binds GOROOT with GOCACHE/GOPATH in `scratch_env`,
-   `GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0`; cargo/dotnet stay refused as on Windows.
-   Add `BoxRuntime.readonly_binds` and pass it to `spawn` only when non-empty.
-3. `CheckBox.run`: when the process has `.linux_sandbox`, journal `boundary: "LINUX_SANDBOX"`
-   with `facts.to_payload()`; make `CheckRunFacts.appcontainer` optional and add
-   `linux_sandbox`; `verified_boundary` returns `LINUX_SANDBOX` only for `verified_linux_facts`.
-4. `check_repository.check_run_fact`: the claimed boundary is per record (`linux-sandbox:`
-   identity -> LINUX_SANDBOX verified by `linux_sandbox.verified_linux_facts`, else
-   APPCONTAINER by `verified_token_facts`); never cross-accept. Same in
-   `change_check_runs_fact` and `runtime_service.list_for_change` (line ~753).
-   `assurance/diff_coverage.py:459` accepts either verified boundary.
-5. Contract (additive): `"LINUX_SANDBOX"` in the check-run boundary literals
-   (`contracts/models.py` lines ~255, ~1244, ~1528, ~1553); regenerate openapi + desktop client;
-   desktop check-run views need a `LINUX_SANDBOX` label (mirror `features/passport/v2.ts`).
-6. Wire in `main.create_app` on Linux: `CheckBoxes(..., platform=LinuxBoxPlatform(store),
-   resolver=linux_resolve_check_runtime)`; make `sweep_runtime_cache` a no-op without a cache.
-7. Tests: unit tests with fake facts (cross-acceptance refused, tampered payloads FAIL),
-   then real-kernel tests in `tests/execution/linux/` mirroring `acceptance/test_confined_checks.py`
-   (agent-authored conftest cannot write outside, read the store/token, or reach the network;
-   each with a host positive control), and the Passport `confined_checks` PASS for a Linux run.
+### Linux confined check boxes: implemented
+The Linux platform in `execution/linux_check_box.py` supplies the existing `BoxPlatform`
+seam: private 0700 storage, Linux identities, scratch HOME/TMPDIR, and verified bubblewrap,
+seccomp and cgroup execution. Runtime binds are read-only: Python's venv/base install,
+Node's prefix and project node_modules, and offline GOROOT. Unsafe runtime roots and
+cargo/dotnet/uv are refused. Linux has no Windows runtime snapshot cache.
+
+Check runs journal Linux facts under `LINUX_SANDBOX`. Row and journal verification must
+agree with the box identity and network setting; AppContainer and Linux facts never
+cross-accept. Missing or tampered evidence never yields PASS. The additive contract,
+OpenAPI and desktop client include Linux facts and boundaries; Assurance and Passport
+show check runs with each boundary's own name. The displayed Linux verification flag is
+computed from the facts, rather than trusting the recorded flag.
+
+Verification for this continuation (2026-10-04):
+* Final real-kernel and Linux unit suites: **78 passed, 2 skipped**, using
+  `python -m pytest -o addopts= -q -p no:cacheprovider -rs -W ignore
+  backend/tests/execution/linux backend/tests/execution/test_linux_check_box.py`.
+  This includes **24 passed, 2 skipped** in the real-kernel folder and **54 passed**
+  in the unit file. The HTTP tests carry `real_check_boxes` to disable the host fake.
+  Harness: privileged `python:3.12-slim`, bubblewrap/git/nodejs/npm/procps, package
+  installed with `pip install -e ".[test,tui,keyring,telemetry]"`, cgroup2 mounted,
+  shell in a leaf, delegated subtree owned by tester, tests run as tester with
+  `SENTINEL_TEST_CGROUP_PARENT=/sys/fs/cgroup/sentinel-test` and
+  `SENTINEL_TEST_CGROUP_CONTROLLERS=0`. Fork-bomb/controller tests skip on this
+  Docker Desktop kernel; the CI linux-sandbox job must verify them with controllers.
+* Full Linux plain suite: **2087 passed, 328 skipped, 21 warnings** in 469.30 s.
+  Command: `python -m pytest -o addopts= -q` in nonprivileged `python:3.12-slim`,
+  git installed, package installed with `pip install -e ".[test,tui,keyring,telemetry]"`,
+  and a test git identity configured; tracked and untracked working files streamed via tar.
+* Full Windows suite: **2327 passed, 88 skipped, 3 warnings** in 2025.15 s.
+  Command: `.tmp/windows-suite-env/Scripts/python.exe -m pytest -o addopts= -q
+  --junitxml=windows-full-final.xml`, with a fresh Python 3.14.3 venv installed via
+  `pip install -e ".[test,tui,keyring,telemetry]"`. No failures, including the
+  dependency-pin and supervised-tree recovery tests. The earlier system-Python
+  run was replaced after prolonged runtime-snapshot hashing; it is not counted
+  as a completed run. System Python has FastAPI 0.135.1 versus the 0.141.1 pin.
+* Final Windows affected suites: **96 passed, 3 POSIX skips**, using
+  `python -m pytest -o addopts= -q backend/tests/execution/test_linux_check_box.py
+  backend/tests/execution/test_check_box.py backend/tests/acceptance/test_contract_boundaries.py`.
+* Desktop: `npm run api:check`, `npm test`, `npm run typecheck`, and `npm run build` passed;
+  **69 unit tests and 104 Electron tests**, zero failures.
+* CI: check the post-push runs, especially linux-sandbox; local controller skips
+  do not establish that job's success.
 
 Decisions taken (kb, 2026-10-03): **D-03** built-in profiles declare a boundary per platform
 (`boundaries=(("win32", APPCONTAINER), ("linux", LINUX_SANDBOX))`; an unnamed platform is
@@ -108,9 +117,9 @@ not available in containers (do not change `.wslconfig`: it restarts WSL and Doc
 1. **Phase 2 leftovers**: tests for `SandboxHiddenTestRunner` (Linux) and `VerificationHiddenTestRunner` (Windows);
    a first real `--agent claude` run (needs a Claude login) to fill the eval results table.
    Ubuntu 24.04 hosts need `packaging/apparmor/sentinel-bwrap` (read its trade-off note).
-2. **Linux confined check boxes** (Phase 1 item 6): a Linux `BoxPlatform` on the sandbox with
-   network off, Linux facts in the `check.confined_run` payload, Passport `confined_checks`
-   accepting them. Until then Linux checks fail closed.
+2. **Done: Linux confined check boxes** (Phase 1 item 6): verified Linux platform,
+   read-only runtimes, journaled Linux facts, Passport confined_checks and desktop views;
+   verification and controller limitations are recorded above.
 3. **Phase 5/6 follow-up**: extend Windows scenarios to race junctions and exercise successfully
    spawned hostile descendants on a suitable host; review `bench/fuzz/windows-results.xml`.
    Review `bench/release/leaderboard-smoke.html`; obtain license agreement, select the package
@@ -320,6 +329,8 @@ Acceptance (all are automated tests that must pass on `ubuntu-latest`):
 - [x] If `bwrap` is missing or user namespaces are disabled, launch fails closed with a clear
       message. No unconfined retry.
 - [x] Passport for a Linux run claims `LINUX_SANDBOX` only with recorded verified facts.
+- [x] Linux confined check boxes verify their boundary, isolate hostile checks, and bind
+      their facts into Passport `confined_checks`; desktop Assurance and Passport show them.
 
 Measure and record in `bench/boundary_overhead/`: median and p95 launch overhead (time from
 launch request to agent start) with and without the sandbox, over 200 launches.
